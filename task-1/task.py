@@ -95,7 +95,41 @@ def our_knn(N, D, A, X, K):
 #     pass
 
 def our_kmeans(N, D, A, K):
-    pass
+    """
+    Input:
+      N (int): Number of vectors.
+      D (int): Dimension of each vector.
+      A (list[list[float]]): Collection of vectors (N x D).
+      K (int): Number of clusters.
+
+    Returns:
+      list[int]: Cluster IDs for each vector.
+    """
+    
+    A = cp.asarray(A)
+    indices = cp.random.choice(N, K, replace=False)
+    centroids = A[indices, :] 
+    
+    for _ in range(100):
+        distance_list = []
+        for centroid in centroids:
+            diff_sq = subtract_square(A, centroid)  #
+            d = cp.sqrt(cp.sum(diff_sq, axis=1))
+            distance_list.append(d[:, cp.newaxis])
+        
+        distances = cp.concatenate(distance_list, axis=1)  
+        labels = cp.argmin(distances, axis=1)
+        
+        new_centroids = cp.array([cp.mean(A[labels == k], axis=0) if cp.any(labels == k) 
+                                  else centroids[k] for k in range(K)])
+        
+        if cp.allclose(centroids, new_centroids):
+            break
+        
+        centroids = new_centroids
+
+    return labels.get().tolist()
+
 
 # ------------------------------------------------------------------------------------------------
 # Your Task 2.2 code here
@@ -200,3 +234,5 @@ if __name__ == "__main__":
     print(f"L2 Difference: {l2_kernel-l2_api}")
     print(f"Dot Difference: {dot_kernel-dot_api}")
     print(f"Manhattan Difference: {manhattan_kernel-manhattan_api}")
+    
+    test_kmeans()
