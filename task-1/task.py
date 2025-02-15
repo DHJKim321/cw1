@@ -186,7 +186,7 @@ def test_manhattan(D=2, use_kernel=True):
 
 # Example
 def test_kmeans():
-    N, D, A, K = testdata_kmeans("")
+    N, D, A, K = testdata_kmeans("test_file.json")
     kmeans_result = our_kmeans(N, D, A, K)
     print(kmeans_result)
 
