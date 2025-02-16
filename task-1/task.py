@@ -97,7 +97,7 @@ def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
         elif distance_metric == "dot":
             distances = -distance_dot(A, X, use_kernel)
         elif distance_metric == "manhattan":
-            distance_manhattan(A, X, use_kernel) 
+            distances = distance_manhattan(A, X, use_kernel) 
         else:
             raise ValueError("Unsupported distance metric. Choose from ['l2', 'cosine', 'manhattan', 'dot']")
     else:
