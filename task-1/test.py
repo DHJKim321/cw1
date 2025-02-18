@@ -1,5 +1,6 @@
 import numpy as np
 import json
+import cupy as cp
 
 def read_data(file_path=""):
     """
@@ -74,3 +75,4 @@ def testdata_ann(test_file):
             A = np.loadtxt(A_file)
             X = np.loadtxt(X_file)
         return N, D, A, X, K
+    
