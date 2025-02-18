@@ -8,31 +8,31 @@ import scipy
 from test import testdata_kmeans, testdata_knn, testdata_ann
 
 # You can create any kernel here
-subtract_square = cp.ElementwiseKernel('float64 x, float64 y', 
-                                    'float64 z', 
+subtract_square = cp.ElementwiseKernel('float32 x, float32 y', 
+                                    'float32 z', 
                                     '''
                                     z = (x - y);
                                        z = z * z;                                   
                                     '''
                                     )
 
-subtract_abs = cp.ElementwiseKernel('float64 x, float64 y',
-                                    'float64 z',
+subtract_abs = cp.ElementwiseKernel('float32 x, float32 y',
+                                    'float32 z',
                                     '''
                                     z = abs(x - y)
                                     ''')
 
-sum_sqrt = cp.ReductionKernel('float64 x', 'float64 y', 'x', 'a + b', 'y = sqrt(a)', '0')
+sum_sqrt = cp.ReductionKernel('float32 x', 'float32 y', 'x', 'a + b', 'y = sqrt(a)', '0')
 
-multiply = cp.ElementwiseKernel('float64 x, float64 y', 
-                                'float64 z', 
+multiply = cp.ElementwiseKernel('float32 x, float32 y', 
+                                'float32 z', 
                                 '''z = x * y''')
 
-_sum = cp.ReductionKernel('float64 x', 'float64 y', 'x', 'a + b', 'y = a', '0')
+_sum = cp.ReductionKernel('float32 x', 'float32 y', 'x', 'a + b', 'y = a', '0')
 
-square = cp.ElementwiseKernel('float64 x', 'float64 y', '''y = x * x''')
+square = cp.ElementwiseKernel('float32 x', 'float32 y', '''y = x * x''')
 
-divide = cp.ElementwiseKernel('float64 x, float64 y', 'float64 z', '''z = x / y''')
+divide = cp.ElementwiseKernel('float32 x, float32 y', 'float32 z', '''z = x / y''')
 
 def distance_cosine(X, Y, use_kernel=True):
     if use_kernel:
@@ -73,6 +73,23 @@ def distance_manhattan(X, Y, use_kernel=True):
     else:
         U = cp.sum(cp.abs(X - Y))
     return U
+
+def distance_cosine_np(X, Y):
+    sum_X = np.linalg.norm(X)
+    sum_Y = np.linalg.norm(Y)
+    dot = np.dot(X, Y)
+    W = np.divide(dot, (sum_X * sum_Y))
+    V = 1 - W
+    return V
+
+def distance_l2_np(X, Y):
+    return np.linalg.norm(X - Y) 
+
+def distance_dot_np(X, Y):
+    return np.dot(X, Y)
+
+def distance_manhattan_np(X, Y):
+    return np.sum(np.abs(X - Y))
 
 # ------------------------------------------------------------------------------------------------
 # Your Task 1.2 code here
@@ -137,8 +154,8 @@ def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
 #     pass
 
 mean_kernel = cp.ReductionKernel(
-    'float64 x',  # Input type
-    'float64 y',  # Output type
+    'float32 x',  # Input type
+    'float32 y',  # Output type
     'x',          # Map function (identity function here)
     'a + b',      # Reduce function (sum)
     'y = a / _ind.size()',  # Post-reduction function (mean)
@@ -224,7 +241,7 @@ def our_ann(N, D, A, X, K, use_kernel=True):
 # ------------------------------------------------------------------------------------------------
 
 def test_cosine(D=2, use_kernel=True):
-    X, Y = cp.random.randn(D), cp.random.randn(D)
+    X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
     start = time.time()
     ours = distance_cosine(X, Y, use_kernel=use_kernel)
     end = time.time()
@@ -234,7 +251,7 @@ def test_cosine(D=2, use_kernel=True):
     return end-start
 
 def test_l2(D=2, use_kernel=True):
-    X, Y = cp.random.randn(D), cp.random.randn(D)
+    X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
     start = time.time()
     ours = distance_l2(X, Y, use_kernel=use_kernel)
     end = time.time()
@@ -244,7 +261,7 @@ def test_l2(D=2, use_kernel=True):
     return end-start
 
 def test_dot(D=2, use_kernel=True):
-    X, Y = cp.random.randn(D), cp.random.randn(D)
+    X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
     start = time.time()
     ours = distance_dot(X, Y, use_kernel=use_kernel)
     end = time.time()
@@ -254,7 +271,7 @@ def test_dot(D=2, use_kernel=True):
     return end-start
 
 def test_manhattan(D=2, use_kernel=True):
-    X, Y = cp.random.randn(D), cp.random.randn(D)
+    X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
     start = time.time()
     ours = distance_manhattan(X, Y, use_kernel=use_kernel)
     end = time.time()
@@ -262,6 +279,58 @@ def test_manhattan(D=2, use_kernel=True):
     assert cp.isclose([ours], [gold])
     print("Execution Time: {}".format(end - start))
     return end-start
+
+def test_cosine_gpu_vs_cpu(D=2):
+    X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
+    start_gpu = time.time()
+    _ = distance_cosine(X, Y)
+    end_gpu = time.time()
+    X, Y = np.array(X.get(), dtype=np.float32), np.array(Y.get(), dtype=np.float32)
+    start_cpu = time.time()
+    _ = distance_cosine_np(X, Y)
+    end_cpu = time.time()
+    print(f"Cosine (GPU): {end_gpu-start_gpu}")
+    print(f"Cosine (CPU): {end_cpu-start_cpu}")
+    print(f"Cosine (CPU - GPU): {(end_cpu-start_cpu)  - (end_gpu-start_gpu)}")
+
+def test_l2_gpu_vs_cpu(D=2):
+    X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
+    start_gpu = time.time()
+    _ = distance_l2(X, Y)
+    end_gpu = time.time()
+    X, Y = np.array(X.get(), dtype=np.float32), np.array(Y.get(), dtype=np.float32)
+    start_cpu = time.time()
+    _ = distance_l2_np(X, Y)
+    end_cpu = time.time()
+    print(f"L2 (GPU): {end_gpu-start_gpu}")
+    print(f"L2 (CPU): {end_cpu-start_cpu}")
+    print(f"L2 (CPU - GPU): {(end_cpu-start_cpu)  - (end_gpu-start_gpu)}")
+
+def test_dot_gpu_vs_cpu(D=2):
+    X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
+    start_gpu = time.time()
+    _ = distance_dot(X, Y)
+    end_gpu = time.time()
+    X, Y = np.array(X.get(), dtype=np.float32), np.array(Y.get(), dtype=np.float32)
+    start_cpu = time.time()
+    _ = distance_dot_np(X, Y)
+    end_cpu = time.time()
+    print(f"Dot (GPU): {end_gpu-start_gpu}")
+    print(f"Dot (CPU): {end_cpu-start_cpu}")
+    print(f"Dot (CPU - GPU): {(end_cpu-start_cpu)  - (end_gpu-start_gpu)}")
+
+def test_manhattan_gpu_vs_cpu(D=2):
+    X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
+    start_gpu = time.time()
+    _ = distance_manhattan(X, Y)
+    end_gpu = time.time()
+    X, Y = np.array(X.get(), dtype=np.float32), np.array(Y.get(), dtype=np.float32)
+    start_cpu = time.time()
+    _ = distance_manhattan_np(X, Y)
+    end_cpu = time.time()
+    print(f"Manhattan (GPU): {end_gpu-start_gpu}")
+    print(f"Manhattan (CPU): {end_cpu-start_cpu}")
+    print(f"Manhattan (CPU - GPU): {(end_cpu-start_cpu)  - (end_gpu-start_gpu)}")
 
 # Example
 def test_kmeans():
@@ -334,6 +403,21 @@ if __name__ == "__main__":
     print(f"L2 Difference: {l2_kernel-l2_api}")
     print(f"Dot Difference: {dot_kernel-dot_api}")
     print(f"Manhattan Difference: {manhattan_kernel-manhattan_api}")
+    print("----------------------------------------")
+    print("Testing Differences Between CPU and GPU")
+    D = 2
+    print(f"Dimension: {D}")
+    test_cosine_gpu_vs_cpu(D)
+    test_l2_gpu_vs_cpu(D)
+    test_dot_gpu_vs_cpu(D)
+    test_manhattan_gpu_vs_cpu(D)
+    D = 2**15
+    print(f"Dimension: {D}")
+    test_cosine_gpu_vs_cpu(D)
+    test_l2_gpu_vs_cpu(D)
+    test_dot_gpu_vs_cpu(D)
+    test_manhattan_gpu_vs_cpu(D)
+    print("----------------------------------------")
     
     ### Test KNN
     ### Test KMeans
