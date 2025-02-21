@@ -460,6 +460,8 @@ def test_cosine_raw(D=2):
     X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
     start = time.time()
     ours = cosine_distance_gpu(X, Y)
+    print(X)
+    print(Y)
     print(ours)
     end = time.time()
     gold = 1 - torch.cosine_similarity(torch.tensor(X, dtype=float), torch.tensor(Y, dtype=float), dim=0).item()
