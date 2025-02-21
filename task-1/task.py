@@ -64,7 +64,7 @@ def cosine_similarity_gpu(X, Y):
     N = X.shape[0]
     num_blocks = max(1, int((N + 255) // 256))
     result = cp.zeros(N, dtype=cp.float32)
-    cosine_kernel((num_blocks,), (256,), (X, Y, result, N))
+    cosine_kernel_raw((num_blocks,), (256,), (X, Y, result, N))
     return result
 
 l2_kernel_raw = cp.RawKernel(r'''
@@ -89,7 +89,7 @@ def l2_distance_gpu(X, Y):
     N = X.shape[0]
     num_blocks = max(1, int((N + 255) // 256))
     result = cp.zeros(N, dtype=cp.float32)
-    l2_kernel((num_blocks,), (256,), (X, Y, result, N))
+    l2_kernel_raw((num_blocks,), (256,), (X, Y, result, N))
     return result
 
 dot_kernel_raw = cp.RawKernel(r'''
@@ -126,7 +126,7 @@ def dot_product_gpu(X, Y):
     N = X.shape[0]
     num_blocks = max(1, int((N + 255) // 256))
     result = cp.zeros(1, dtype=cp.float32)
-    dot_kernel((num_blocks,), (256,), (X, Y, result, N))
+    dot_kernel_raw((num_blocks,), (256,), (X, Y, result, N))
     return result
 
 manhattan_kernel_raw = cp.RawKernel(r'''
@@ -163,7 +163,7 @@ def manhattan_distance_gpu(X, Y):
     N = X.shape[0]
     num_blocks = max(1, int((N + 255) // 256))
     result = cp.zeros(1, dtype=cp.float32)
-    manhattan_kernel((num_blocks,), (256,), (X, Y, result, N))
+    manhattan_kernel_raw((num_blocks,), (256,), (X, Y, result, N))
     return result
 
 def distance_cosine(X, Y, use_kernel=True):
