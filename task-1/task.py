@@ -41,26 +41,34 @@ void cosine_similarity(float* A, float* B, float* result, int N) {
     __shared__ float shared_B[256];  
 
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
-    if (tid >= N) return;  // Prevent out-of-bounds access
+    if (tid >= N) return;
 
     shared_A[threadIdx.x] = A[tid];
     shared_B[threadIdx.x] = B[tid];
     __syncthreads();
 
-    float dot = 0.0, normA = 0.0, normB = 0.0;
-    dot += shared_A[threadIdx.x] * shared_B[threadIdx.x];
-    normA += shared_A[threadIdx.x] * shared_A[threadIdx.x];
-    normB += shared_B[threadIdx.x] * shared_B[threadIdx.x];
+    float dot = shared_A[threadIdx.x] * shared_B[threadIdx.x];
+    float normA = shared_A[threadIdx.x] * shared_A[threadIdx.x];
+    float normB = shared_B[threadIdx.x] * shared_B[threadIdx.x];
 
     __syncthreads();
 
-    if (tid < N) {
-        result[tid] = 1.0 - (dot / (sqrt(normA) * sqrt(normB) + 1e-8));
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (threadIdx.x < s) {
+            dot += shared_A[threadIdx.x + s] * shared_B[threadIdx.x + s];
+            normA += shared_A[threadIdx.x + s] * shared_A[threadIdx.x + s];
+            normB += shared_B[threadIdx.x + s] * shared_B[threadIdx.x + s];
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0) {
+        result[blockIdx.x] = 1.0 - (dot / (sqrt(normA) * sqrt(normB) + 1e-8));
     }
 }
-''', 'cosine_similarity')
+''', 'cosine_distance')
 
-def cosine_similarity_gpu(X, Y):
+def cosine_distance_gpu(X, Y):
     N = X.shape[0]
     num_blocks = max(1, int((N + 255) // 256))
     result = cp.zeros(N, dtype=cp.float32)
@@ -451,8 +459,7 @@ def test_manhattan(D=2, use_kernel=True):
 def test_cosine_raw(D=2):
     X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
     start = time.time()
-    ours = cosine_similarity_gpu(X, Y)
-    print(ours)
+    ours = cosine_distance_gpu(X, Y)
     end = time.time()
     gold = 1 - torch.cosine_similarity(torch.tensor(X, dtype=float), torch.tensor(Y, dtype=float), dim=0).item()
     assert cp.isclose([ours], [gold], rtol=1e-06, atol=1e-6)
