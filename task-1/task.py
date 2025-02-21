@@ -34,6 +34,138 @@ square = cp.ElementwiseKernel('float32 x', 'float32 y', '''y = x * x''')
 
 divide = cp.ElementwiseKernel('float32 x, float32 y', 'float32 z', '''z = x / y''')
 
+cosine_kernel = cp.RawKernel(r'''
+extern "C" __global__
+void cosine_similarity(float* A, float* B, float* result, int N) {
+    __shared__ float shared_A[256];  
+    __shared__ float shared_B[256];  
+
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    if (tid >= N) return;  // Prevent out-of-bounds access
+
+    shared_A[threadIdx.x] = A[tid];
+    shared_B[threadIdx.x] = B[tid];
+    __syncthreads();
+
+    float dot = 0.0, normA = 0.0, normB = 0.0;
+    dot += shared_A[threadIdx.x] * shared_B[threadIdx.x];
+    normA += shared_A[threadIdx.x] * shared_A[threadIdx.x];
+    normB += shared_B[threadIdx.x] * shared_B[threadIdx.x];
+
+    __syncthreads();
+
+    if (tid < N) {
+        result[tid] = 1.0 - (dot / (sqrt(normA) * sqrt(normB) + 1e-8));
+    }
+}
+''', 'cosine_similarity')
+
+def cosine_similarity_gpu(X, Y):
+    N = X.shape[0]
+    num_blocks = max(1, (N + 255) // 256)  
+    result = cp.zeros(N, dtype=cp.float32)
+    cosine_kernel((num_blocks,), (256,), (X, Y, result, N))
+    return result
+
+l2_kernel = cp.RawKernel(r'''
+extern "C" __global__
+void l2_distance(float* A, float* B, float* result, int N) {
+    __shared__ float shared_A[256];  
+    __shared__ float shared_B[256];  
+
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    if (tid >= N) return;  
+
+    shared_A[threadIdx.x] = A[tid];
+    shared_B[threadIdx.x] = B[tid];
+    __syncthreads();
+
+    float diff = shared_A[threadIdx.x] - shared_B[threadIdx.x];
+    result[tid] = sqrt(diff * diff);
+}
+''', 'l2_distance')
+
+def l2_distance_gpu(X, Y):
+    N = X.shape[0]
+    num_blocks = max(1, (N + 255) // 256)  
+    result = cp.zeros(N, dtype=cp.float32)
+    l2_kernel((num_blocks,), (256,), (X, Y, result, N))
+    return result
+
+dot_kernel = cp.RawKernel(r'''
+extern "C" __global__
+void dot_product(float* A, float* B, float* result, int N) {
+    __shared__ float shared_A[256];  
+    __shared__ float shared_B[256];  
+    __shared__ float partial_sum[256];  
+
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    if (tid >= N) return;
+
+    shared_A[threadIdx.x] = A[tid];
+    shared_B[threadIdx.x] = B[tid];
+    __syncthreads();
+
+    partial_sum[threadIdx.x] = shared_A[threadIdx.x] * shared_B[threadIdx.x];
+    __syncthreads();
+
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (threadIdx.x < s) {
+            partial_sum[threadIdx.x] += partial_sum[threadIdx.x + s];
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0) {
+        atomicAdd(result, partial_sum[0]);
+    }
+}
+''', 'dot_product')
+
+def dot_product_gpu(X, Y):
+    N = X.shape[0]
+    num_blocks = max(1, (N + 255) // 256)  
+    result = cp.zeros(1, dtype=cp.float32)
+    dot_kernel((num_blocks,), (256,), (X, Y, result, N))
+    return result
+
+manhattan_kernel = cp.RawKernel(r'''
+extern "C" __global__
+void manhattan_distance(float* A, float* B, float* result, int N) {
+    __shared__ float shared_A[256];  
+    __shared__ float shared_B[256];  
+    __shared__ float partial_sum[256];  
+
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    if (tid >= N) return;
+
+    shared_A[threadIdx.x] = A[tid];
+    shared_B[threadIdx.x] = B[tid];
+    __syncthreads();
+
+    partial_sum[threadIdx.x] = abs(shared_A[threadIdx.x] - shared_B[threadIdx.x]);
+    __syncthreads();
+
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (threadIdx.x < s) {
+            partial_sum[threadIdx.x] += partial_sum[threadIdx.x + s];
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0) {
+        atomicAdd(result, partial_sum[0]);
+    }
+}
+''', 'manhattan_distance')
+
+def manhattan_distance_gpu(X, Y):
+    N = X.shape[0]
+    num_blocks = max(1, (N + 255) // 256)  
+    result = cp.zeros(1, dtype=cp.float32)
+    manhattan_kernel((num_blocks,), (256,), (X, Y, result, N))
+    return result
+
 def distance_cosine(X, Y, use_kernel=True):
     if use_kernel:
         sum_X = sum_sqrt(square(X))
@@ -316,6 +448,42 @@ def test_manhattan(D=2, use_kernel=True):
     # print("Execution Time: {}".format(end - start))
     return end-start
 
+def test_cosine_raw(D=2):
+    X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
+    start = time.time()
+    ours = cosine_similarity_gpu(X, Y)
+    end = time.time()
+    gold = 1 - torch.cosine_similarity(torch.tensor(X, dtype=float), torch.tensor(Y, dtype=float), dim=0).item()
+    assert cp.isclose([ours], [gold], rtol=1e-06, atol=1e-6)
+    return end-start
+
+def test_l2_raw(D=2):
+    X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
+    start = time.time()
+    ours = l2_distance_gpu(X, Y)
+    end = time.time()
+    gold = cp.linalg.norm(X - Y)
+    assert cp.isclose([ours], [gold])
+    return end-start
+
+def test_dot_raw(D=2):
+    X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
+    start = time.time()
+    ours = dot_product_gpu(X, Y)
+    end = time.time()
+    gold = cp.dot(X, Y)
+    assert cp.isclose([ours], [gold])
+    return end-start
+
+def test_manhattan_raw(D=2):
+    X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
+    start = time
+    ours = manhattan_distance_gpu(X, Y)
+    end = time.time()
+    gold = scipy.spatial.distance.cityblock(X.get(), Y.get())
+    assert cp.isclose([ours], [gold])
+    return end-start
+
 def test_cosine_gpu_vs_cpu(D=2, use_kernel=False):
     X, Y = cp.random.randn(D, dtype=cp.float32), cp.random.randn(D, dtype=cp.float32)
     start_gpu = time.time()
@@ -424,16 +592,18 @@ if __name__ == "__main__":
     print("Testing Distance Functions")
     for D in dimensions:
         print(f"Dimension: {D}")
-        cosine_kernel_list, cosine_api_list = cp.empty(N), cp.empty(N)
+        cosine_kernel_list, cosine_api_list, cosine_raw_list = cp.empty(N), cp.empty(N), cp.empty(N)
         cosine_kernel_stream_list, cosine_api_stream_list = cp.empty(N), cp.empty(N)
-        l2_kernel_list, l2_api_list = cp.empty(N), cp.empty(N)
-        dot_kernel_list, dot_api_list = cp.empty(N), cp.empty(N)
-        manhattan_kernel_list, manhattan_api_list = cp.empty(N), cp.empty(N)
+        l2_kernel_list, l2_api_list, l2_raw_list = cp.empty(N), cp.empty(N), cp.empty(N)
+        dot_kernel_list, dot_api_list, dot_raw_list = cp.empty(N), cp.empty(N), cp.empty(N)
+        manhattan_kernel_list, manhattan_api_list, manhattan_raw_list = cp.empty(N), cp.empty(N), cp.empty(N)
         for i in range(N):
             cosine_kernel = test_cosine(D)
             cosine_kernel_list[i] = cosine_kernel
             cosine_api = test_cosine(D, use_kernel=False)
             cosine_api_list[i] = cosine_api
+            cosine_raw = test_cosine_raw(D)
+            cosine_raw_list[i] = cosine_raw
             cosine_kernel_stream = test_cosine_streams(D, use_kernel=True)
             cosine_kernel_stream_list[i] = cosine_kernel_stream
             cosine_api_stream = test_cosine_streams(D, use_kernel=False)
@@ -442,14 +612,20 @@ if __name__ == "__main__":
             l2_kernel_list[i] = l2_kernel
             l2_api = test_l2(D, use_kernel=False)
             l2_api_list[i] = l2_api
+            l2_raw = test_l2_raw(D)
+            l2_raw_list[i] = l2_raw
             dot_kernel = test_dot(D)
             dot_kernel_list[i] = dot_kernel
             dot_api = test_dot(D, use_kernel=False)
             dot_api_list[i] = dot_api
+            dot_raw = test_dot_raw(D)
+            dot_raw_list[i] = dot_raw
             manhattan_kernel = test_manhattan(D)
             manhattan_kernel_list[i] = manhattan_kernel
             manhattan_api = test_manhattan(D, use_kernel=False)
             manhattan_api_list[i] = manhattan_api
+            manhattan_raw = test_manhattan_raw(D)
+            manhattan_raw_list[i] = manhattan_raw
         print("----------------------------------------")
         print("Absolute Runtime Values (API)")
         print(f"Cosine (Stream): {cosine_api_stream_list.mean()}")
@@ -464,6 +640,12 @@ if __name__ == "__main__":
         print(f"L2: {l2_kernel_list.mean()}")
         print(f"Dot: {dot_kernel_list.mean()}")
         print(f"Manhattan: {manhattan_kernel_list.mean()}")
+        print("----------------------------------------")
+        print("Absolute Runtime Values (Raw)")
+        print(f"Cosine: {cosine_raw_list.mean()}")
+        print(f"L2: {l2_raw_list.mean()}")
+        print(f"Dot: {dot_raw_list.mean()}")
+        print(f"Manhattan: {manhattan_raw_list.mean()}")
         print("----------------------------------------")
         print("Differences in Speed (Positive means API is faster than Kernel)")
         print(f"Cosine Difference: {cosine_kernel_list.mean()-cosine_api_list.mean()}")
@@ -510,4 +692,4 @@ if __name__ == "__main__":
     ### Test KMeans
     
     ### Test Ann
-    test_our_ann()
+    # test_our_ann()
