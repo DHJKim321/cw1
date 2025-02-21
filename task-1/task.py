@@ -36,7 +36,7 @@ divide = cp.ElementwiseKernel('float32 x, float32 y', 'float32 z', '''z = x / y'
 
 cosine_kernel_raw = cp.RawKernel(r'''
 extern "C" __global__
-void cosine_similarity(float* A, float* B, float* result, int N) {
+void cosine_distance(float* A, float* B, float* result, int N) {
     __shared__ float shared_A[256];  
     __shared__ float shared_B[256];  
 
