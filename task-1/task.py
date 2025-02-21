@@ -62,7 +62,7 @@ void cosine_similarity(float* A, float* B, float* result, int N) {
 
 def cosine_similarity_gpu(X, Y):
     N = X.shape[0]
-    num_blocks = max(1, (N + 255) // 256)  
+    num_blocks = max(1, int((N + 255) // 256))
     result = cp.zeros(N, dtype=cp.float32)
     cosine_kernel((num_blocks,), (256,), (X, Y, result, N))
     return result
@@ -87,7 +87,7 @@ void l2_distance(float* A, float* B, float* result, int N) {
 
 def l2_distance_gpu(X, Y):
     N = X.shape[0]
-    num_blocks = max(1, (N + 255) // 256)  
+    num_blocks = max(1, int((N + 255) // 256))
     result = cp.zeros(N, dtype=cp.float32)
     l2_kernel((num_blocks,), (256,), (X, Y, result, N))
     return result
@@ -124,7 +124,7 @@ void dot_product(float* A, float* B, float* result, int N) {
 
 def dot_product_gpu(X, Y):
     N = X.shape[0]
-    num_blocks = max(1, (N + 255) // 256)  
+    num_blocks = max(1, int((N + 255) // 256))
     result = cp.zeros(1, dtype=cp.float32)
     dot_kernel((num_blocks,), (256,), (X, Y, result, N))
     return result
@@ -161,7 +161,7 @@ void manhattan_distance(float* A, float* B, float* result, int N) {
 
 def manhattan_distance_gpu(X, Y):
     N = X.shape[0]
-    num_blocks = max(1, (N + 255) // 256)  
+    num_blocks = max(1, int((N + 255) // 256))
     result = cp.zeros(1, dtype=cp.float32)
     manhattan_kernel((num_blocks,), (256,), (X, Y, result, N))
     return result
