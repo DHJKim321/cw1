@@ -34,7 +34,7 @@ square = cp.ElementwiseKernel('float32 x', 'float32 y', '''y = x * x''')
 
 divide = cp.ElementwiseKernel('float32 x, float32 y', 'float32 z', '''z = x / y''')
 
-cosine_kernel = cp.RawKernel(r'''
+cosine_kernel_raw = cp.RawKernel(r'''
 extern "C" __global__
 void cosine_similarity(float* A, float* B, float* result, int N) {
     __shared__ float shared_A[256];  
@@ -67,7 +67,7 @@ def cosine_similarity_gpu(X, Y):
     cosine_kernel((num_blocks,), (256,), (X, Y, result, N))
     return result
 
-l2_kernel = cp.RawKernel(r'''
+l2_kernel_raw = cp.RawKernel(r'''
 extern "C" __global__
 void l2_distance(float* A, float* B, float* result, int N) {
     __shared__ float shared_A[256];  
@@ -92,7 +92,7 @@ def l2_distance_gpu(X, Y):
     l2_kernel((num_blocks,), (256,), (X, Y, result, N))
     return result
 
-dot_kernel = cp.RawKernel(r'''
+dot_kernel_raw = cp.RawKernel(r'''
 extern "C" __global__
 void dot_product(float* A, float* B, float* result, int N) {
     __shared__ float shared_A[256];  
@@ -129,7 +129,7 @@ def dot_product_gpu(X, Y):
     dot_kernel((num_blocks,), (256,), (X, Y, result, N))
     return result
 
-manhattan_kernel = cp.RawKernel(r'''
+manhattan_kernel_raw = cp.RawKernel(r'''
 extern "C" __global__
 void manhattan_distance(float* A, float* B, float* result, int N) {
     __shared__ float shared_A[256];  
