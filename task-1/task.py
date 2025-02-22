@@ -172,6 +172,75 @@ def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
 
     return top_k_indices
 
+    
+def our_knn_np(N, D, A, X, K, distance_metric="l2"):
+  
+    if A.shape != (N, D) or X.shape != (D,):
+        raise ValueError("Shape mismatch: A should be (N, D) and X should be (D,)")
+
+    # Compute distances based on chosen metric
+    if distance_metric == "cosine":
+        distances = distance_cosine_np(A, X)
+    elif distance_metric == "l2":
+        distances = distance_l2_np(A, X)
+    elif distance_metric == "dot":
+        distances = -distance_dot_np(A, X)
+    elif distance_metric == "manhattan":
+        distances = distance_manhattan_np(A, X)
+    else:
+        raise ValueError("Unsupported distance metric. Choose from ['l2', 'cosine', 'manhattan', 'dot']")
+
+    # Get the indices of the top K smallest distances
+    top_k_indices = np.argsort(distances)[:K]
+
+    return top_k_indices
+
+
+
+
+def our_knn_nearest_batch(N, D, A, X, K, batch_size=100000, distance_metric="l2", use_kernel=True):
+
+    if A.shape != (N, D) or X.shape != (D,):
+        raise ValueError("Shape mismatch: A should be (N, D) and X should be (D,)")
+
+    top_k_results = []
+    top_k_distances = []
+
+    for i in range(0, N, batch_size):
+        batch_A = A[i:i+batch_size]  # Extract batch
+
+        # Compute distances for the batch
+        if distance_metric == "cosine":
+            distances = distance_cosine(batch_A, X, use_kernel)
+        elif distance_metric == "l2":
+            distances = distance_l2(batch_A, X, use_kernel)
+        elif distance_metric == "dot":
+            distances = -distance_dot(batch_A, X, use_kernel)
+        elif distance_metric == "manhattan":
+            distances = distance_manhattan(batch_A, X, use_kernel)
+        else:
+            raise ValueError("Unsupported distance metric. Choose from ['l2', 'cosine', 'manhattan', 'dot']")
+
+        # Get Top-K from this batch
+        batch_top_k = cp.argsort(distances)[:K]
+        batch_top_k_distances = distances[batch_top_k]
+
+        # Adjust indices for batch offset
+        top_k_results.append(batch_top_k + i)
+        top_k_distances.append(batch_top_k_distances)
+
+    # Merge Top-K results from all batches
+    top_k_results = cp.concatenate(top_k_results)
+    top_k_distances = cp.concatenate(top_k_distances)
+
+    # Get final Top-K across all batches
+    final_top_k = cp.argsort(top_k_distances)[:K]
+
+    return top_k_results[final_top_k] 
+
+
+
+
 # ------------------------------------------------------------------------------------------------
 # Your Task 2.1 code here
 # ------------------------------------------------------------------------------------------------
