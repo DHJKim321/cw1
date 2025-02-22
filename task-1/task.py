@@ -124,8 +124,6 @@ def distance_manhattan_np(X, Y):
 # You can create any kernel here
 
 def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
-<<<<<<< HEAD
-=======
     """_knn
 
     Args:
@@ -140,7 +138,6 @@ def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
     Returns:
         _type_: _description_
     """
->>>>>>> main
 
     if A.shape != (N, D) or X.shape != (D,):
         raise ValueError("Shape mismatch: A should be (N, D) and X should be (D,)")
@@ -173,8 +170,6 @@ def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
     top_k_indices = cp.argsort(distances)[:K]
 
     return top_k_indices
-<<<<<<< HEAD
-=======
 
     
 def our_knn_np(N, D, A, X, K, distance_metric="l2"):
@@ -244,7 +239,6 @@ def our_knn_nearest_batch(N, D, A, X, K, batch_size=100000, distance_metric="l2"
 
 
 
->>>>>>> main
 
 # ------------------------------------------------------------------------------------------------
 # Your Task 2.1 code here
