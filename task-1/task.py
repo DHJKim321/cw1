@@ -206,7 +206,7 @@ def our_ann(N, D, A, X, K, use_kernel=True):
     Returns:
         Result[K]: Top K nearest neighbors ID (index of the vector in A)
     """
-    n_probe = 3 # the number of clusters
+    n_probe = 3 # the number of clusters searched during a query
     cluster_ids, centroids = our_kmeans(N, D, A, n_probe, use_kernel=use_kernel)
 
     top_k_indices = []
