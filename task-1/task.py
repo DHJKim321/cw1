@@ -5,6 +5,7 @@ import numpy as np
 import time
 import json
 import scipy
+from scipy.cluster.vq import vq
 from test import testdata_kmeans, testdata_knn, testdata_ann
 
 # You can create any kernel here
@@ -157,12 +158,12 @@ def our_kmeans(N, D, A, K, use_kernel=True):
     list[int]: Cluster IDs for each vector.
     list[list[float]]: Centroids of each cluster.
     """
-    
+    iter = 100 # the number of iterations of the k-means algorithm running.
     A = cp.asarray(A)
     indices = cp.random.choice(N, K, replace=False)
     centroids = A[indices, :] 
     
-    for _ in range(100):
+    for _ in range(iter):
         distance_list = []
         for centroid in centroids:
             diff_sq = subtract_square(A, centroid)  # Why not use diff_sq = _sum(substract_square(A, centroid)) using kernel?
@@ -185,7 +186,7 @@ def our_kmeans(N, D, A, K, use_kernel=True):
         
         centroids = new_centroids
 
-    return labels, centroids
+    return centroids, labels
 
 # ------------------------------------------------------------------------------------------------
 # Your Task 2.2 code here
@@ -206,18 +207,83 @@ def our_ann(N, D, A, X, K, use_kernel=True):
     Returns:
         Result[K]: Top K nearest neighbors ID (index of the vector in A)
     """
+    
     n_probe = 3 # the number of clusters searched during a query
-    cluster_ids, centroids = our_kmeans(N, D, A, n_probe, use_kernel=use_kernel)
+    
+
+    centroids, labels, = our_kmeans(N, D, A, K, use_kernel=use_kernel)
 
     top_k_indices = []
-        
-    label = cp.argmin(distance_l2(centroids, X, use_kernel=use_kernel))
-    cluster = A[cluster_ids == label]
-    top_k_indices = our_knn(cluster.shape[0], D, cluster, X, K, use_kernel=use_kernel)
+    for _ in range(n_probe):    
+        label = cp.argmin(distance_l2(centroids, X, use_kernel=use_kernel))
+        cluster = A[labels == label]
+        top_k_indices = our_knn(cluster.shape[0], D, cluster, X, K, use_kernel=use_kernel)
     
     return top_k_indices
         
+def our_ann_IVFPQ(N, D, A, X, K, M, n_probe, use_kernel=True):
+    """Approximate Nearest Neighbor search using IVFPQ(Inverted Vectors for Product Quantization)
+        Usually, M is 8
+        The larger n_probe is, the more accurate the search is, but the slower the search is.
+        Currently, distance metric is set to L2 distance, but you can use cosine distance or dot product as well.
+
+    Args:
+        N (int): Number of vectors 
+        D (int): Dimension of vectors
+        A (list[list[float]]): A collection of vectors(N x D)
+        X (list[float]): A specified vector(ie. query vector)
+        K (int): Top K nearest neighbors to find
+        M (int): Number of sub-vectors of PQ subvectors
+        n_probe (int): the number of clusters searched during a query
+        
+    Returns:
+        Result[K]: Top K nearest neighbors ID (index of the vector in A)
+    """
+    dsub = D // M  # Dimensionality of sub-vector
+    ksub = 256  # Number of Clusters for sub-vectors
+    # Step 1: Train K-means on dataset for Inverted Index(Coarse Quantization)
+    centroids, labels = our_kmeans(N, D, A, K, use_kernel=use_kernel)
+    # Step 2: Product Quantization(Fine Quantization) Training
+    pq_codebooks = np.empty((M, ksub, dsub), dtype=np.float32) # PQ centroids
+    pq_codes = np.empty((N, M), dtype=np.uint8) # Encoded PQ codes
     
+    for m in range(M):
+        sub_vecs = A[:, m * dsub:(m + 1) * dsub] # Extract sub-vectors
+        pq_codebooks[m], _ = our_kmeans(N, dsub, sub_vecs, ksub, use_kernel=use_kernel)
+        pq_codes[:, m] = vq(sub_vecs, pq_codebooks[m]) # Assign to PQ centroids
+        
+    # Step 3: Query Processing
+    # Find closest clusters to the query vector
+    closest_clusters = cp.argsort(distance_l2(centroids, X, use_kernel=use_kernel))[:n_probe]
+    
+    # Retrieve points in the selected clusters
+    candidates = []
+    for label in closest_clusters:
+        candidates.extend(np.where(labels == label)[0])
+        
+    # If no candidates found, return an empty list
+    if len(candidates) == 0:
+        return []
+    
+    selected_vectors = A[candidates] # Extract actual vectors in the selected clusters
+    
+    # Step 4 : Compute PQ Distance Table
+    query_pq = np.empty((M,), dtype=np.uint8)
+    dist_table = np.empty((M, ksub), dtype=np.float32)
+    
+    for m in range(M):
+        query_sub = X[m * dsub:(m + 1) * dsub] # Extract query sub-vector
+        dist_table[m, :] = distance_l2(pq_codebooks[m], query_sub, use_kernel=use_kernel)
+        query_pq[m] = np.argmin(dist_table[m]) # Assign PQ code for query
+        
+    # Step 5: Approximate Nearest Neighbor Search Using our KNN
+    top_k_indicies = our_knn(
+        len(candidates), D, selected_vectors, X, K, use_kernel=use_kernel
+    )
+    
+    # Convert back to original indicies in A
+    return [candidates[i] for i in top_k_indicies]
+
 
 # ------------------------------------------------------------------------------------------------
 # Test your code here
