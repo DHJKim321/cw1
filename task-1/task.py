@@ -256,7 +256,7 @@ def our_ann_IVFPQ(N, D, A, X, K, M, n_probe, use_kernel=True):
         pq_codebooks[m], _ = our_kmeans(N, dsub, sub_vecs, ksub, use_kernel=use_kernel)
         pq_codes[:, m] = vq(sub_vecs, pq_codebooks[m]) # Assign to PQ centroids
         
-    # Step 3: Query Processing
+    # Step 3: Query Processintg
     # Find the closest 'n_probe' clusters to the query vector
     closest_clusters = cp.argsort(distance_l2(centroids, X, use_kernel=use_kernel))[:n_probe]
     
@@ -269,11 +269,10 @@ def our_ann_IVFPQ(N, D, A, X, K, M, n_probe, use_kernel=True):
     if len(candidates) == 0:
         return []
     
-    
-    # Step 4 : Compute PQ Distance Table
     query_coarse_id = closest_clusters[0] # Assign query to closest cluster
     query_residual = X - centroids[query_coarse_id] # Compute residual vector for query
     
+    # Step 4 : Compute PQ Distance Table
     query_pq = np.empty((M,), dtype=np.uint8)
     dist_table = np.empty((M, ksub), dtype=np.float32)
     
@@ -289,8 +288,9 @@ def our_ann_IVFPQ(N, D, A, X, K, M, n_probe, use_kernel=True):
 
         # Compute final IVFPQ distance
         # d = || x - y_C - y_R ||²
-        coarse_distance = np.sum((X - centroids[labels[idx]])**2)  # || x - q1(y) ||²
-        refined_distance = np.sum(dist_table[np.arange(M), pq_code])  # Lookup table sum for q2(y - q1(y))
+        coarse_distance = np.sum((X - centroids[labels[idx]])**2)  # || x - q1(y) ||². q1(y) = y_C
+        refined_distance = np.sum(dist_table[np.arange(M), pq_code])    # Lookup table sum for q2(y - q1(y)), q2(y - q1(y)) = y_R.
+                                                                        # refined_distance is equivalent to || y_R ||² because dist_table is already squared.
 
         total_distance = coarse_distance + refined_distance
         distances.append((idx, total_distance))
