@@ -241,19 +241,23 @@ def our_ann_IVFPQ(N, D, A, X, K, M, n_probe, use_kernel=True):
     """
     dsub = D // M  # Dimensionality of sub-vector
     ksub = 256  # Number of Clusters for sub-vectors
-    # Step 1: Train K-means on dataset for Inverted Index(Coarse Quantization)
+    # Step 1: First-Level Clustering (Coarse Quantization - IVF)
     centroids, labels = our_kmeans(N, D, A, K, use_kernel=use_kernel)
+    
+    # Compute residual vectores (y - q1(y))
+    residuals = A - centroids[labels]
+    
     # Step 2: Product Quantization(Fine Quantization) Training
     pq_codebooks = np.empty((M, ksub, dsub), dtype=np.float32) # PQ centroids
     pq_codes = np.empty((N, M), dtype=np.uint8) # Encoded PQ codes
     
     for m in range(M):
-        sub_vecs = A[:, m * dsub:(m + 1) * dsub] # Extract sub-vectors
+        sub_vecs = residuals[:, m * dsub:(m + 1) * dsub] # Extract sub-vectors
         pq_codebooks[m], _ = our_kmeans(N, dsub, sub_vecs, ksub, use_kernel=use_kernel)
         pq_codes[:, m] = vq(sub_vecs, pq_codebooks[m]) # Assign to PQ centroids
         
     # Step 3: Query Processing
-    # Find closest clusters to the query vector
+    # Find the closest 'n_probe' clusters to the query vector
     closest_clusters = cp.argsort(distance_l2(centroids, X, use_kernel=use_kernel))[:n_probe]
     
     # Retrieve points in the selected clusters
@@ -265,24 +269,37 @@ def our_ann_IVFPQ(N, D, A, X, K, M, n_probe, use_kernel=True):
     if len(candidates) == 0:
         return []
     
-    selected_vectors = A[candidates] # Extract actual vectors in the selected clusters
     
     # Step 4 : Compute PQ Distance Table
+    query_coarse_id = closest_clusters[0] # Assign query to closest cluster
+    query_residual = X - centroids[query_coarse_id] # Compute residual vector for query
+    
     query_pq = np.empty((M,), dtype=np.uint8)
     dist_table = np.empty((M, ksub), dtype=np.float32)
     
     for m in range(M):
-        query_sub = X[m * dsub:(m + 1) * dsub] # Extract query sub-vector
+        query_sub = query_residual[m * dsub:(m + 1) * dsub] # Extract query sub-vector
         dist_table[m, :] = distance_l2(pq_codebooks[m], query_sub, use_kernel=use_kernel)
         query_pq[m] = np.argmin(dist_table[m]) # Assign PQ code for query
         
     # Step 5: Approximate Nearest Neighbor Search Using our KNN
-    top_k_indicies = our_knn(
-        len(candidates), D, selected_vectors, X, K, use_kernel=use_kernel
-    )
-    
-    # Convert back to original indicies in A
-    return [candidates[i] for i in top_k_indicies]
+    distances = []
+    for idx in candidates:
+        pq_code = pq_codes[idx]
+
+        # Compute final IVFPQ distance
+        # d = || x - y_C - y_R ||²
+        coarse_distance = np.sum((X - centroids[labels[idx]])**2)  # || x - q1(y) ||²
+        refined_distance = np.sum(dist_table[np.arange(M), pq_code])  # Lookup table sum for q2(y - q1(y))
+
+        total_distance = coarse_distance + refined_distance
+        distances.append((idx, total_distance))
+
+    # Sort by distance and return top-K indices
+    distances.sort(key=lambda x: x[1])
+    return [idx for idx, _ in distances[:K]]
+
+
 
 
 # ------------------------------------------------------------------------------------------------
