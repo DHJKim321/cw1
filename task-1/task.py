@@ -572,97 +572,98 @@ def recall_rate(list1, list2):
     return len(set(list1) & set(list2)) / len(list1)
 
 if __name__ == "__main__":
-    ### Test Distance Functions
-    dimensions = [2, 2**15]
-    N = 30
-    print(f"N={N}")
-    print("Testing Distance Functions")
-    for D in dimensions:
-        print(f"Dimension: {D}")
-        cosine_kernel_list, cosine_api_list = cp.empty(N), cp.empty(N)
-        cosine_kernel_stream_list, cosine_api_stream_list = cp.empty(N), cp.empty(N)
-        l2_kernel_list, l2_api_list = cp.empty(N), cp.empty(N)
-        dot_kernel_list, dot_api_list = cp.empty(N), cp.empty(N)
-        manhattan_kernel_list, manhattan_api_list = cp.empty(N), cp.empty(N)
-        for i in range(N):
-            cosine_kernel = test_cosine(D)
-            cosine_kernel_list[i] = cosine_kernel
-            cosine_api = test_cosine(D, use_kernel=False)
-            cosine_api_list[i] = cosine_api
-            cosine_kernel_stream = test_cosine_streams(D, use_kernel=True)
-            cosine_kernel_stream_list[i] = cosine_kernel_stream
-            cosine_api_stream = test_cosine_streams(D, use_kernel=False)
-            cosine_api_stream_list[i] = cosine_api_stream
-            l2_kernel = test_l2(D)
-            l2_kernel_list[i] = l2_kernel
-            l2_api = test_l2(D, use_kernel=False)
-            l2_api_list[i] = l2_api
-            dot_kernel = test_dot(D)
-            dot_kernel_list[i] = dot_kernel
-            dot_api = test_dot(D, use_kernel=False)
-            dot_api_list[i] = dot_api
-            manhattan_kernel = test_manhattan(D)
-            manhattan_kernel_list[i] = manhattan_kernel
-            manhattan_api = test_manhattan(D, use_kernel=False)
-            manhattan_api_list[i] = manhattan_api
-        print("----------------------------------------")
-        print("Absolute Runtime Values (API)")
-        print(f"Cosine (Stream): {cp.median(cosine_api_stream_list)}")
-        print(f"Cosine (Without Stream): {cp.median(cosine_api_list)}")
-        print(f"L2: {cp.median(l2_api_list)}")
-        print(f"Dot: {cp.median(dot_api_list)}")
-        print(f"Manhattan: {cp.median(manhattan_api_list)}")
-        print("----------------------------------------")
-        print("Absolute Runtime Values (Kernel)")
-        print(f"Cosine (Stream): {cp.median(cosine_kernel_stream_list)}")
-        print(f"Cosine (Without Stream): {cp.median(cosine_kernel_list)}")
-        print(f"L2: {cp.median(l2_kernel_list)}")
-        print(f"Dot: {cp.median(dot_kernel_list)}")
-        print(f"Manhattan: {cp.median(manhattan_kernel_list)}")
-        print("----------------------------------------")
-        print("Differences in Speed (Positive means API is faster than Kernel)")
-        print(f"Cosine Difference: {cp.median(cosine_kernel_list) - cp.median(cosine_api_list)}")
-        print(f"Cosine Difference (Streams): {cp.median(cosine_kernel_stream_list) - cp.median(cosine_api_stream_list)}")
-        print(f"L2 Difference: {cp.median(l2_kernel_list) - cp.median(l2_api_list)}")
-        print(f"Dot Difference: {cp.median(dot_kernel_list) - cp.median(dot_api_list)}")
-        print(f"Manhattan Difference: {cp.median(manhattan_kernel_list) - cp.median(manhattan_api_list)}")
-        print("----------------------------------------")
-    print(f"Testing Differences Between CPU and GPU")
-    for D in dimensions:
-        print(f"Dimension: {D}")
-        cosine_gpu, cosine_cpu = cp.empty(N), cp.empty(N)
-        l2_gpu, l2_cpu = cp.empty(N), cp.empty(N)
-        dot_gpu, dot_cpu = cp.empty(N), cp.empty(N)
-        manhattan_gpu, manhattan_cpu = cp.empty(N), cp.empty(N)
-        for i in range(N):
-            gpu, cpu = test_cosine_gpu_vs_cpu(D) # diff = cpu - gpu
-            cosine_gpu[i] = gpu
-            cosine_cpu[i] = cpu
-            gpu, cpu = test_l2_gpu_vs_cpu(D)
-            l2_gpu[i] = gpu
-            l2_cpu[i] = cpu
-            gpu, cpu = test_dot_gpu_vs_cpu(D)
-            dot_gpu[i] = gpu
-            dot_cpu[i] = cpu
-            gpu, cpu = test_manhattan_gpu_vs_cpu(D)
-            manhattan_gpu[i] = gpu
-            manhattan_cpu[i] = cpu
-        print(f"Cosine CPU: {cp.median(cosine_cpu)}")
-        print(f"Cosine GPU: {cp.median(cosine_gpu)}")
-        print(f"Cosine CPU - GPU: {(cp.median(cosine_cpu) - cp.median(cosine_gpu)).item()}")
-        print(f"L2 CPU: {cp.median(l2_cpu)}")
-        print(f"L2 GPU: {cp.median(l2_gpu)}")
-        print(f"L2 CPU - GPU: {(cp.median(l2_cpu) - cp.median(l2_gpu)).item()}")
-        print(f"Dot CPU: {cp.median(dot_cpu)}")
-        print(f"Dot GPU: {cp.median(dot_gpu)}")
-        print(f"Dot CPU - GPU: {(cp.median(dot_cpu) - cp.median(dot_gpu)).item()}")
-        print(f"Manhattan CPU: {cp.median(cosine_cpu)}")
-        print(f"Manhattan GPU: {cp.median(manhattan_gpu)}")
-        print(f"Manhattan CPU - GPU: {(cp.median(manhattan_cpu) - cp.median(manhattan_gpu)).item()}")
-        print("----------------------------------------")
+    # ### Test Distance Functions
+    # dimensions = [2, 2**15]
+    # N = 30
+    # print(f"N={N}")
+    # print("Testing Distance Functions")
+    # for D in dimensions:
+    #     print(f"Dimension: {D}")
+    #     cosine_kernel_list, cosine_api_list = cp.empty(N), cp.empty(N)
+    #     cosine_kernel_stream_list, cosine_api_stream_list = cp.empty(N), cp.empty(N)
+    #     l2_kernel_list, l2_api_list = cp.empty(N), cp.empty(N)
+    #     dot_kernel_list, dot_api_list = cp.empty(N), cp.empty(N)
+    #     manhattan_kernel_list, manhattan_api_list = cp.empty(N), cp.empty(N)
+    #     for i in range(N):
+    #         cosine_kernel = test_cosine(D)
+    #         cosine_kernel_list[i] = cosine_kernel
+    #         cosine_api = test_cosine(D, use_kernel=False)
+    #         cosine_api_list[i] = cosine_api
+    #         cosine_kernel_stream = test_cosine_streams(D, use_kernel=True)
+    #         cosine_kernel_stream_list[i] = cosine_kernel_stream
+    #         cosine_api_stream = test_cosine_streams(D, use_kernel=False)
+    #         cosine_api_stream_list[i] = cosine_api_stream
+    #         l2_kernel = test_l2(D)
+    #         l2_kernel_list[i] = l2_kernel
+    #         l2_api = test_l2(D, use_kernel=False)
+    #         l2_api_list[i] = l2_api
+    #         dot_kernel = test_dot(D)
+    #         dot_kernel_list[i] = dot_kernel
+    #         dot_api = test_dot(D, use_kernel=False)
+    #         dot_api_list[i] = dot_api
+    #         manhattan_kernel = test_manhattan(D)
+    #         manhattan_kernel_list[i] = manhattan_kernel
+    #         manhattan_api = test_manhattan(D, use_kernel=False)
+    #         manhattan_api_list[i] = manhattan_api
+    #     print("----------------------------------------")
+    #     print("Absolute Runtime Values (API)")
+    #     print(f"Cosine (Stream): {cp.median(cosine_api_stream_list)}")
+    #     print(f"Cosine (Without Stream): {cp.median(cosine_api_list)}")
+    #     print(f"L2: {cp.median(l2_api_list)}")
+    #     print(f"Dot: {cp.median(dot_api_list)}")
+    #     print(f"Manhattan: {cp.median(manhattan_api_list)}")
+    #     print("----------------------------------------")
+    #     print("Absolute Runtime Values (Kernel)")
+    #     print(f"Cosine (Stream): {cp.median(cosine_kernel_stream_list)}")
+    #     print(f"Cosine (Without Stream): {cp.median(cosine_kernel_list)}")
+    #     print(f"L2: {cp.median(l2_kernel_list)}")
+    #     print(f"Dot: {cp.median(dot_kernel_list)}")
+    #     print(f"Manhattan: {cp.median(manhattan_kernel_list)}")
+    #     print("----------------------------------------")
+    #     print("Differences in Speed (Positive means API is faster than Kernel)")
+    #     print(f"Cosine Difference: {cp.median(cosine_kernel_list) - cp.median(cosine_api_list)}")
+    #     print(f"Cosine Difference (Streams): {cp.median(cosine_kernel_stream_list) - cp.median(cosine_api_stream_list)}")
+    #     print(f"L2 Difference: {cp.median(l2_kernel_list) - cp.median(l2_api_list)}")
+    #     print(f"Dot Difference: {cp.median(dot_kernel_list) - cp.median(dot_api_list)}")
+    #     print(f"Manhattan Difference: {cp.median(manhattan_kernel_list) - cp.median(manhattan_api_list)}")
+    #     print("----------------------------------------")
+    # print(f"Testing Differences Between CPU and GPU")
+    # for D in dimensions:
+    #     print(f"Dimension: {D}")
+    #     cosine_gpu, cosine_cpu = cp.empty(N), cp.empty(N)
+    #     l2_gpu, l2_cpu = cp.empty(N), cp.empty(N)
+    #     dot_gpu, dot_cpu = cp.empty(N), cp.empty(N)
+    #     manhattan_gpu, manhattan_cpu = cp.empty(N), cp.empty(N)
+    #     for i in range(N):
+    #         gpu, cpu = test_cosine_gpu_vs_cpu(D) # diff = cpu - gpu
+    #         cosine_gpu[i] = gpu
+    #         cosine_cpu[i] = cpu
+    #         gpu, cpu = test_l2_gpu_vs_cpu(D)
+    #         l2_gpu[i] = gpu
+    #         l2_cpu[i] = cpu
+    #         gpu, cpu = test_dot_gpu_vs_cpu(D)
+    #         dot_gpu[i] = gpu
+    #         dot_cpu[i] = cpu
+    #         gpu, cpu = test_manhattan_gpu_vs_cpu(D)
+    #         manhattan_gpu[i] = gpu
+    #         manhattan_cpu[i] = cpu
+    #     print(f"Cosine CPU: {cp.median(cosine_cpu)}")
+    #     print(f"Cosine GPU: {cp.median(cosine_gpu)}")
+    #     print(f"Cosine CPU - GPU: {(cp.median(cosine_cpu) - cp.median(cosine_gpu)).item()}")
+    #     print(f"L2 CPU: {cp.median(l2_cpu)}")
+    #     print(f"L2 GPU: {cp.median(l2_gpu)}")
+    #     print(f"L2 CPU - GPU: {(cp.median(l2_cpu) - cp.median(l2_gpu)).item()}")
+    #     print(f"Dot CPU: {cp.median(dot_cpu)}")
+    #     print(f"Dot GPU: {cp.median(dot_gpu)}")
+    #     print(f"Dot CPU - GPU: {(cp.median(dot_cpu) - cp.median(dot_gpu)).item()}")
+    #     print(f"Manhattan CPU: {cp.median(cosine_cpu)}")
+    #     print(f"Manhattan GPU: {cp.median(manhattan_gpu)}")
+    #     print(f"Manhattan CPU - GPU: {(cp.median(manhattan_cpu) - cp.median(manhattan_gpu)).item()}")
+    #     print("----------------------------------------")
     
     ### Test KNN
     ### Test KMeans
     
     ### Test Ann
-    test_our_ann()
+    # test_our_ann()
+    test_our_ann_IVFPQ()
