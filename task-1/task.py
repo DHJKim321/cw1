@@ -382,6 +382,31 @@ def test_our_ann():
     
     print("Test passed!")
     
+def test_our_ann_IVFPQ():
+    # Generate test data
+    N, D, A, X, K, M, n_probe = testdata_ann()
+    
+    # Convert data to CuPy arrays
+    A_cp = cp.asarray(A)
+    X_cp = cp.asarray(X)
+    
+    # Run the our_ann_IVFPQ function
+    top_k_indices = our_ann_IVFPQ(N, D, A_cp, X_cp, K, M, n_probe)
+    
+    # Convert the result back to NumPy for assertion
+    top_k_indices_np = cp.asnumpy(top_k_indices)
+    
+    # Check the length of the result
+    assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
+    
+    # Check if the indices are within the valid range
+    assert np.all(top_k_indices_np < N), "Some indices are out of range"
+    
+    print("top_k_indices_np.shape:", top_k_indices_np.shape)
+    print("top_k_indices_np:", top_k_indices_np)
+    
+    print("Test passed!")
+    
 def recall_rate(list1, list2):
     """
     Calculate the recall rate of two lists
@@ -423,3 +448,4 @@ if __name__ == "__main__":
     
     ### Test Ann
     test_our_ann()
+    test_our_ann_IVFPQ
