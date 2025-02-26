@@ -231,6 +231,53 @@ def our_kmeans(N, D, A, K, use_kernel=True):
 
     return centroids, labels
 
+def dbscan(A, eps, minPts):
+    """
+    DBSCAN clustering algorithm.
+    
+    Parameters:
+    - A (list[list[float]]): Collection of vectors (N x D).
+    - eps: maximum distance between two points to be considered neighbors
+    - minPts: minimum number of points to form a dense region (core point)
+    
+    Returns:
+    - centroids: list[list[float]], centroids of each cluster
+    - labels: list[int], cluster IDs for each point (-2 for noise, 0+ for clusters)
+    """
+    labels = np.full(len(A), -1)  # -1 means unvisited/noise
+    cluster_id = 0
+    
+    # Run DBSCAN labeling
+    for i in range(len(A)):
+        if labels[i] != -1:  # Skip if already processed
+            continue
+        neighbors = np.where(distance_l2(A, A[i], use_kernel=True) <= eps)[0]
+        if len(neighbors) < minPts:  # Not dense enough
+            labels[i] = -2  # Noise
+        else:
+            # Start a new cluster
+            labels[i] = cluster_id
+            for j in neighbors:
+                if labels[j] == -1 or labels[j] == -2:  # Unvisited or noise
+                    labels[j] = cluster_id
+                    sub_neighbors = np.where(distance_l2(A, A[j], use_kernel=True) <= eps)[0]
+                    if len(sub_neighbors) >= minPts:  # Expand if core point
+                        neighbors = np.union1d(neighbors, sub_neighbors)
+            cluster_id += 1
+    
+    # Calculate centroids for each cluster
+    centroids = []
+    for cid in range(cluster_id):  # Iterate over cluster IDs (0, 1, 2, ...)
+        cluster_points = A[labels == cid]  # Points in this cluster
+        if len(cluster_points) > 0:  # Avoid empty clusters (shouldn't happen, but safety)
+            centroid = np.mean(cluster_points, axis=0).tolist()  # Mean along feature axis
+            centroids.append(centroid)
+    
+    # Convert labels to list for return type consistency
+    labels = labels.tolist()
+    
+    return centroids, labels
+
 # ------------------------------------------------------------------------------------------------
 # Your Task 2.2 code here
 # ------------------------------------------------------------------------------------------------
