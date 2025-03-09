@@ -176,60 +176,260 @@ def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
 # Your Task 2.1 code here
 # ------------------------------------------------------------------------------------------------
 
-# You can create any kernel here
-# def distance_kernel(X, Y, D):
-#     pass
+# -------------------------------------------------------------------------
+# RAW KERNELS
 
-mean_kernel = cp.ReductionKernel(
-    'float32 x',  # Input type
-    'float32 y',  # Output type
-    'x',          # Map function (identity function here)
-    'a + b',      # Reduce function (sum)
-    'y = a / _ind.size()',  # Post-reduction function (mean)
-    '0',          # Identity value for the reduction (sum)
-    'mean_kernel' # Kernel name
-)
-def our_kmeans(N, D, A, K, use_kernel=True):
+
+distance_kernel = cp.RawKernel(r'''
+extern "C" __global__
+void distance_kernel(const float* A, const float* centroids, 
+                                  float* distances, 
+                                  const int N, const int K, const int D) {
+    int idx = blockIdx.x;  // overall index among N*K distances
+    if (idx >= N * K) return;
+    
+    int n = idx / K;  // index into A
+    int k = idx % K;  // index into centroids
+
+    int threadId = threadIdx.x;
+    float partial_sum = 0.0f;
+    
+    int baseA = n * D;
+    int baseC = k * D;
+    
+    for (int d = threadId; d < D; d += blockDim.x) {
+        float diff = A[baseA + d] - centroids[baseC + d];
+        partial_sum += diff * diff;
+    }
+    
+    extern __shared__ float sdata[];
+    sdata[threadId] = partial_sum;
+    __syncthreads();
+    
+    for (unsigned int s = blockDim.x >> 1; s > 0; s >>= 1) {
+        if (threadId < s) {
+            sdata[threadId] += sdata[threadId + s];
+        }
+        __syncthreads();
+    }
+    
+    if (threadId == 0) {
+        distances[idx] = sqrtf(sdata[0]);
+    }
+}
+''', 'distance_kernel')
+
+def vectorized_distance_l2(A, centroids, block_size=128):
+    """
+    Compute L2 distances between each row in A and each centroid using the fused kernel
+    with shared memory.
+    
+    Parameters:
+      A: (N, D) data points.
+      centroids: (K, D) centroids.
+      block_size: Number of threads per block (defines shared memory size).
+      
+    Returns:
+      distances: (N, K) matrix of Euclidean distances.
+    """
+    N, D = A.shape
+    K = centroids.shape[0]
+    total = N * K
+    distances = cp.empty(total, dtype=cp.float32)
+    
+    grid_size = total  
+    shared_mem_bytes = block_size * cp.dtype(cp.float32).itemsize
+    
+    distance_kernel((grid_size,), (block_size,), 
+                                 (A, centroids, distances, cp.int32(N), cp.int32(K), cp.int32(D)),
+                                 shared_mem=shared_mem_bytes)
+    
+    return distances.reshape(N, K)
+
+accumulate_centroids_kernel = cp.RawKernel(r'''
+extern "C" __global__
+void accumulate_centroids_kernel(const float* A, const int* labels, float* new_centroids, 
+                                 float* counts, const int N, const int D) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    for (int i = idx; i < N; i += blockDim.x * gridDim.x) {
+        int label = labels[i];
+        for (int d = 0; d < D; d++) {
+            atomicAdd(&new_centroids[label * D + d], A[i * D + d]);
+        }
+        atomicAdd(&counts[label], 1.0f);
+    }
+}
+''', 'accumulate_centroids_kernel')
+
+finalize_centroids_kernel = cp.RawKernel(r'''
+extern "C" __global__
+void finalize_centroids_kernel(float* new_centroids, const float* old_centroids, 
+                               const float* counts, const int K, const int D) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    int total = K * D;
+    for (int i = idx; i < total; i += blockDim.x * gridDim.x) {
+        int cluster = i / D;
+        if (counts[cluster] > 0.0f) {
+            new_centroids[i] = new_centroids[i] / counts[cluster];
+        } else {
+            new_centroids[i] = old_centroids[i];  // If no points, retain old centroid.
+        }
+    }
+}
+''', 'finalize_centroids_kernel')
+
+def update_centroids(A, labels, old_centroids, K):
+    """
+    Update centroids using the custom accumulation and finalization kernels.
+    
+    Parameters:
+      A: (N, D) data points (CuPy array, float32).
+      labels: (N,) cluster labels (CuPy array, int32).
+      old_centroids: (K, D) current centroid positions.
+      K: Number of clusters.
+    
+    Returns:
+      new_centroids: (K, D) updated centroid positions.
+    """
+    N, D = A.shape
+    new_centroids = cp.zeros((K, D), dtype=cp.float32)
+    counts = cp.zeros((K,), dtype=cp.float32)
+    
+    threads_per_block = 256
+    blocks_A = (N + threads_per_block - 1) // threads_per_block
+    
+    accumulate_centroids_kernel((blocks_A,), (threads_per_block,),
+                                (A, labels.astype(cp.int32), new_centroids, counts, cp.int32(N), cp.int32(D)))
+    
+    total_elements = K * D
+    blocks_final = (total_elements + threads_per_block - 1) // threads_per_block
+    
+    finalize_centroids_kernel((blocks_final,), (threads_per_block,),
+                              (new_centroids, old_centroids, counts, cp.int32(K), cp.int32(D)))
+    
+    return new_centroids
+
+def our_kmeans_raw_kernels(N, D, A, K, block_size=128):
+    """
+    Perform k-means clustering using:
+      - The fused shared-memory distance kernel for computing distances.
+      - Custom kernels for updating centroids.
+    
+    Parameters:
+      N (int): Number of data points.
+      D (int): Dimension of each data point.
+      A (list[list[float]]): Data points.
+      K (int): Number of clusters.
+      block_size (int): Block size for the distance kernel.
+    
+    Returns:
+      cp.ndarray: Cluster labels for each data point.
+    """
+    max_iterations = 100
+    
+    A = cp.asarray(A, dtype=cp.float32)
+    indices = cp.random.choice(N, K, replace=False)
+    centroids = A[indices, :]
+    
+    for _ in range(max_iterations):
+        distances = vectorized_distance_l2(A, centroids, block_size=block_size)
+        labels = cp.argmin(distances, axis=1)
+        new_centroids = update_centroids(A, labels, centroids, K)
+        
+        if cp.allclose(centroids, new_centroids, atol=1e-6):
+            centroids = new_centroids
+            break
+        centroids = new_centroids
+        
+    return labels
+
+
+# -------------------------------------------------------------------------
+# CUPY Basic
+
+def our_kmeans_cupy_basic(N, D, A, K, use_kernel=True):
     """
     Input:
-    N (int): Number of vectors.
-    D (int): Dimension of each vector.
-    A (list[list[float]]): Collection of vectors (N x D).
-    K (int): Number of clusters.
-
-    Returns:
-    list[int]: Cluster IDs for each vector.
-    list[list[float]]: Centroids of each cluster.
-    """
-    iter = 100 # the number of iterations of the k-means algorithm running.
-    A = cp.asarray(A)
-    indices = cp.random.choice(N, K, replace=False)
-    centroids = A[indices, :] 
+      N (int): Number of vectors.
+      D (int): Dimension of each vector.
+      A (list[list[float]]): Collection of vectors (N x D).
+      K (int): Number of clusters.
     
-    for _ in range(iter):
-        distance_list = []
-        for centroid in centroids:
-            diff_sq = subtract_square(A, centroid)  # Why not use diff_sq = _sum(substract_square(A, centroid)) using kernel?
-            d = cp.sqrt(cp.sum(diff_sq, axis=1))     
-            distance_list.append(d[:, cp.newaxis])
-        
-        distances = cp.concatenate(distance_list, axis=1)  
+    Returns:
+      cp.ndarray: Cluster IDs for each vector.
+    """
+    max_iterations = 100
+
+    A = cp.asarray(A, "float32")
+    indices = cp.random.choice(N, K, replace=False)
+    centroids = A[indices, :]
+    
+    for _ in range(max_iterations):
+        W = subtract_square(A[:, None, :], centroids[None, :, :])
+        distances = sum_sqrt(W, axis=2)
         labels = cp.argmin(distances, axis=1)
         
-        if use_kernel:
-            new_centroids = cp.array([mean_kernel(A[labels == k], axis=0) if cp.any(labels == k) 
-                                else centroids[k] for k in range(K)])
-        else:
-            new_centroids = cp.array([cp.mean(A[labels == k], axis=0) if cp.any(labels == k) 
-                                else centroids[k] for k in range(K)])
+        new_centroids = cp.zeros_like(centroids)
+        cp.add.at(new_centroids, labels, A)
         
-        if cp.allclose(centroids, new_centroids):
-            print("Centroids have converged. Stopping iterations.")
+        counts = cp.bincount(labels, minlength=K).astype(cp.float32)
+        counts = counts.reshape(-1, 1)  # shape (K, 1)
+        
+        new_centroids = cp.where(counts > 0, new_centroids / counts, centroids)
+        
+        if cp.allclose(centroids, new_centroids, atol=1e-6):
+            centroids = new_centroids
             break
         
         centroids = new_centroids
+        
+    return labels
 
-    return centroids, labels
+
+# -------------------------------------------------------------------------
+# NUMPY CPU
+
+def our_kmeans_numpy(N, D, A, K, use_kernel=True):
+    """
+    Input:
+      N (int): Number of vectors.
+      D (int): Dimension of each vector.
+      A (list[list[float]]): Collection of vectors (N x D).
+      K (int): Number of clusters.
+    
+    Returns:
+      np.ndarray: Cluster IDs for each vector.
+    """
+    
+    max_iterations = 100
+
+    A = np.asarray(A, dtype=np.float32)
+    indices = np.random.choice(N, K, replace=False)
+    centroids = A[indices, :]
+    
+    for _ in range(max_iterations):
+        diff = A[:, None, :] - centroids[None, :, :]
+        sq_diff = np.sum(diff ** 2, axis=2)
+        distances = np.sqrt(sq_diff)
+        labels = np.argmin(distances, axis=1)
+        
+        new_centroids = np.zeros_like(centroids)
+        np.add.at(new_centroids, labels, A)
+        
+        counts = np.bincount(labels, minlength=K).astype(np.float32)
+        counts = counts.reshape(-1, 1)  # shape (K, 1)
+        
+        new_centroids = np.where(counts > 0, new_centroids / counts, centroids)
+        
+        if np.allclose(centroids, new_centroids, atol=1e-6):
+            centroids = new_centroids
+            break
+        
+        centroids = new_centroids
+        
+    return labels
+
+# TODO add return centroids? piazza mentions main function should have specified input outputs.
 
 def dbscan(A, eps, minPts):
     """
@@ -504,9 +704,25 @@ def test_manhattan_gpu_vs_cpu(D=2, use_kernel=False):
 
 # Example
 def test_kmeans():
-    N, D, A, K = testdata_kmeans("test_file.json")
-    kmeans_result = our_kmeans(N, D, A, K)
-    print(kmeans_result)
+    N, D, A, K = testdata_kmeans("")
+    start = time.time()
+    kmeans_result = our_kmeans_numpy(N, D, A, K)
+    end = time.time()
+    print("numpy:", end - start)
+    # print(kmeans_result)
+    
+    start = time.time()
+    kmeans_result = our_kmeans_cupy_basic(N, D, A, K)
+    end = time.time()
+    print("cupy basic:", end - start)
+    # print(kmeans_result)
+    
+    start = time.time()
+    kmeans_result = our_kmeans_raw_kernels(N, D, A, K)
+    end = time.time()
+    print("cupy raw kernels:", end - start)
+    # print(kmeans_result)
+    
 
 def test_knn():
     N, D, A, X, K = testdata_knn("test_file.json")
