@@ -35,21 +35,38 @@ square = cp.ElementwiseKernel('float32 x', 'float32 y', '''y = x * x''')
 
 divide = cp.ElementwiseKernel('float32 x, float32 y', 'float32 z', '''z = x / y''')
 
-def distance_cosine(X, Y, use_kernel=True):
+# def distance_cosine(X, Y, use_kernel=True):
+#     if use_kernel:
+#         sum_X = sum_sqrt(square(X))
+#         sum_Y = sum_sqrt(square(Y))
+#         dot = _sum(multiply(X, Y))
+#         Z = multiply(sum_X, sum_Y)
+#         W = divide(dot, Z)
+#         V = 1 - W
+#     else:
+#         sum_X = cp.linalg.norm(X)
+#         sum_Y = cp.linalg.norm(Y)
+#         dot = cp.dot(X, Y)
+#         W = cp.divide(dot, (sum_X * sum_Y))
+#         V = 1 - W
+#     return V
+
+def distance_cosine(A, X, use_kernel=True):
     if use_kernel:
-        sum_X = sum_sqrt(square(X))
-        sum_Y = sum_sqrt(square(Y))
-        dot = _sum(multiply(X, Y))
-        Z = multiply(sum_X, sum_Y)
-        W = divide(dot, Z)
-        V = 1 - W
+        sum_A = sum_sqrt(square(A), axis=1)  # Norm of A (N,)
+        sum_X = sum_sqrt(square(X), axis=1)  # Norm of X (1,)
+        dot = _sum(multiply(A, X), axis=1)  # Dot product (N,)
+        Z = multiply(sum_A, sum_X)  # Multiply norms
+        W = divide(dot, Z)  # Normalize dot product
+        V = 1 - W  # Cosine distance (N,)
     else:
-        sum_X = cp.linalg.norm(X)
-        sum_Y = cp.linalg.norm(Y)
-        dot = cp.dot(X, Y)
-        W = cp.divide(dot, (sum_X * sum_Y))
+        sum_A = cp.linalg.norm(A, axis=1)
+        sum_X = cp.linalg.norm(X, axis=1)
+        dot = cp.sum(A * X, axis=1)
+        W = dot / (sum_A * sum_X)
         V = 1 - W
     return V
+
 
 def distance_cosine_streams(X, Y, use_kernel=True):
     stream1 = cp.cuda.Stream()
@@ -77,29 +94,54 @@ def distance_cosine_streams(X, Y, use_kernel=True):
     return V
 
 
-def distance_l2(X, Y, use_kernel=True):
+# def distance_l2(X, Y, use_kernel=True):
+#     if use_kernel:
+#         W = subtract_square(X, Y)
+#         V = sum_sqrt(W) 
+#     else:
+#         V = cp.linalg.norm(X - Y) 
+#     return V
+
+# def distance_dot(X, Y, use_kernel=True):
+#     if use_kernel:
+#         Z = multiply(X, Y)
+#         W = _sum(Z)
+#     else:
+#         W = cp.dot(X, Y)
+#     return W
+
+# def distance_manhattan(X, Y, use_kernel=True):
+#     if use_kernel:
+#         Z = subtract_abs(X, Y)
+#         U = _sum(Z)
+#     else:
+#         U = cp.sum(cp.abs(X - Y))
+#     return U
+
+def distance_l2(A, X, use_kernel=True):
     if use_kernel:
-        W = subtract_square(X, Y)
-        V = sum_sqrt(W) 
+        W = subtract_square(A, X)  # Element-wise squared difference (N, D)
+        V = sum_sqrt(W, axis=1)  # Sum across D and take sqrt (N,)
     else:
-        V = cp.linalg.norm(X - Y) 
+        V = cp.linalg.norm(A - X, axis=1)  # GPU-accelerated L2 norm
     return V
 
-def distance_dot(X, Y, use_kernel=True):
+def distance_manhattan(A, X, use_kernel=True):
     if use_kernel:
-        Z = multiply(X, Y)
-        W = _sum(Z)
+        Z = subtract_abs(A, X)  # Element-wise absolute difference (N, D)
+        U = _sum(Z, axis=1)  # Sum across D (N,)
     else:
-        W = cp.dot(X, Y)
+        U = cp.sum(cp.abs(A - X), axis=1)  # Use CuPy's optimized sum
+    return U
+
+def distance_dot(A, X, use_kernel=True):
+    if use_kernel:
+        Z = multiply(A, X)  # Element-wise multiplication (N, D)
+        W = _sum(Z, axis=1)  # Sum across D (N,)
+    else:
+        W = cp.sum(A * X, axis=1)  # Efficiently compute dot product
     return W
 
-def distance_manhattan(X, Y, use_kernel=True):
-    if use_kernel:
-        Z = subtract_abs(X, Y)
-        U = _sum(Z)
-    else:
-        U = cp.sum(cp.abs(X - Y))
-    return U
 
 def distance_cosine_np(X, Y):
     sum_X = np.linalg.norm(X)
@@ -144,28 +186,25 @@ def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
         raise ValueError("Shape mismatch: A should be (N, D) and X should be (D,)")
 
     # Compute distances based on chosen metric
-    if use_kernel:
-        if distance_metric == "cosine":
-            distances = distance_cosine(A, X, use_kernel)
-        elif distance_metric == "l2":
-            distances = distance_l2(A, X, use_kernel)
-        elif distance_metric == "dot":
-            distances = -distance_dot(A, X, use_kernel)
-        elif distance_metric == "manhattan":
-            distances = distance_manhattan(A, X, use_kernel) 
-        else:
-            raise ValueError("Unsupported distance metric. Choose from ['l2', 'cosine', 'manhattan', 'dot']")
+        
+        # if distance_metric == "cosine":
+        #     distances = distance_cosine(A, X, use_kernel)
+        # elif distance_metric == "l2":
+        #     distances = distance_l2(A, X, use_kernel)
+        # elif distance_metric == "dot":
+        #     distances = -distance_dot(A, X, use_kernel)
+        # elif distance_metric == "manhattan":
+        #     distances = distance_manhattan(A, X, use_kernel) 
+    if distance_metric == "cosine":
+        distances = distance_cosine(A, X[None, :], use_kernel)  # Broadcast X across all rows of A
+    elif distance_metric == "l2":
+        distances = distance_l2(A, X[None, :], use_kernel)  # Apply L2 distance using kernel
+    elif distance_metric == "dot":
+        distances = -distance_dot(A, X[None, :], use_kernel)  # Apply dot product distance
+    elif distance_metric == "manhattan":
+        distances = distance_manhattan(A, X[None, :], use_kernel)  # Apply Manhattan distance
     else:
-        if distance_metric == "cosine":
-            distances = cp.array([distance_cosine(A[i], X, use_kernel) for i in range(N)])
-        elif distance_metric == "l2":
-            distances = cp.array([distance_l2(A[i], X, use_kernel) for i in range(N)])
-        elif distance_metric == "dot":
-            distances = -cp.array([distance_dot(A[i], X, use_kernel) for i in range(N)])
-        elif distance_metric == "manhattan":
-            distances = cp.array([distance_manhattan(A[i], X, use_kernel) for i in range(N)])
-        else:
-            raise ValueError("Unsupported distance metric. Choose from ['l2', 'cosine', 'manhattan', 'dot']")
+        raise ValueError("Unsupported distance metric. Choose from ['l2', 'cosine', 'manhattan', 'dot']")
 
         # Get the indices of the top K smallest distances
     top_k_indices = cp.argsort(distances)[:K]
@@ -180,13 +219,13 @@ def our_knn_np(N, D, A, X, K, distance_metric="l2"):
 
     # Compute distances based on chosen metric
     if distance_metric == "cosine":
-        distances = distance_cosine_np(A, X)
+        distances =  np.array([distance_cosine_np(A[i], X) for i in range(N)])
     elif distance_metric == "l2":
-        distances = distance_l2_np(A, X)
+        distances = np.array([distance_l2_np(A[i], X) for i in range(N)])
     elif distance_metric == "dot":
-        distances = -distance_dot_np(A, X)
+        distances = -np.array([distance_dot_np(A[i], X) for i in range(N)])
     elif distance_metric == "manhattan":
-        distances = distance_manhattan_np(A, X)
+        distances = np.array([distance_manhattan_np(A[i], X) for i in range(N)])
     else:
         raise ValueError("Unsupported distance metric. Choose from ['l2', 'cosine', 'manhattan', 'dot']")
 
@@ -209,15 +248,14 @@ def our_knn_nearest_batch(N, D, A, X, K, batch_size=100000, distance_metric="l2"
     for i in range(0, N, batch_size):
         batch_A = A[i:i+batch_size]  # Extract batch
 
-        # Compute distances for the batch
         if distance_metric == "cosine":
-            distances = distance_cosine(batch_A, X, use_kernel)
+            distances = distance_cosine(batch_A, X[None, :], use_kernel)  # Broadcast X across all rows of A
         elif distance_metric == "l2":
-            distances = distance_l2(batch_A, X, use_kernel)
+            distances = distance_l2(batch_A, X[None, :], use_kernel)  # Apply L2 distance using kernel
         elif distance_metric == "dot":
-            distances = -distance_dot(batch_A, X, use_kernel)
+            distances = -distance_dot(batch_A, X[None, :], use_kernel)  # Apply dot product distance
         elif distance_metric == "manhattan":
-            distances = distance_manhattan(batch_A, X, use_kernel)
+            distances = distance_manhattan(batch_A, X[None, :], use_kernel)  # Apply Manhattan distance
         else:
             raise ValueError("Unsupported distance metric. Choose from ['l2', 'cosine', 'manhattan', 'dot']")
 
@@ -237,7 +275,6 @@ def our_knn_nearest_batch(N, D, A, X, K, batch_size=100000, distance_metric="l2"
     final_top_k = cp.argsort(top_k_distances)[:K]
 
     return top_k_results[final_top_k] 
-
 
 
 
@@ -947,8 +984,55 @@ if __name__ == "__main__":
     #     print("----------------------------------------")
     
     ### Test KNN
+
+     # Set parameters
+    N, D, K = 4000000, 2, 10
+
+    # Generate random dataset
+    A_gpu = cp.random.randn(N, D).astype(cp.float32)  # GPU array
+    X_gpu = cp.random.randn(D).astype(cp.float32)
+
+    # Test with 4M vectors
+    for metric in ["l2", "cosine", "dot", "manhattan"]:
+        print("running")
+        top_k_indices = our_knn_nearest_batch(N, D, A_gpu, X_gpu, K, distance_metric=metric, use_kernel=True)
+        print(f"Top {K} nearest neighbors using {metric} distance:", cp.asnumpy(top_k_indices))
+
+    # # Convert to NumPy for CPU testing
+    # A_cpu = cp.asnumpy(A_gpu)
+    # X_cpu = cp.asnumpy(X_gpu)
+
+    # # Test different distance metrics
+    # for metric in ["l2", "cosine", "dot", "manhattan"]:
+    #     # Measure CPU Time (NumPy)
+    #     start_cpu = time.time()
+    #     top_k_indices_cpu = our_knn_np(N, D, A_cpu, X_cpu, K, distance_metric=metric)
+    #     end_cpu = time.time()
+    #     cpu_time = end_cpu - start_cpu
+
+    #     # Measure GPU Time (CuPy - Without Kernel Optimization)
+    #     start_cp = time.time()
+    #     top_k_indices_cp = our_knn(N, D, A_gpu, X_gpu, K, distance_metric=metric, use_kernel=False)
+    #     end_cp = time.time()
+    #     cp_time = end_cp - start_cp
+
+    #     # Measure GPU Time (CuPy - With Kernel Optimization)
+    #     start_elm = time.time()
+    #     top_k_indices_element = our_knn(N, D, A_gpu, X_gpu, K, distance_metric=metric, use_kernel=True)
+    #     end_elm = time.time()
+    #     elm_time = end_elm - start_elm
+
+    #     # Print results
+    #     print(f"⚡ {metric.upper()} Distance Results:")
+    #     print(f"    CPU Time (NumPy): {cpu_time:.6f} sec")
+    #     print(f"    GPU Time (CuPy - No Kernel): {cp_time:.6f} sec")
+    #     print(f"    GPU Time (CuPy - Kernel): {elm_time:.6f} sec")
+    #     print(f"    Speedup (CPU vs CuPy No Kernel): {round(cpu_time / cp_time, 2)}x")
+    #     print(f"    Speedup (CPU vs CuPy Kernel): {round(cpu_time / elm_time, 2)}x")
+    #     print(f"    Speedup (CuPy No Kernel vs Kernel): {round(cp_time / elm_time, 2)}x\n")
+
     ### Test KMeans
     
     ### Test Ann
     # test_our_ann()
-    test_our_ann_IVFPQ()
+    # test_our_ann_IVFPQ()
