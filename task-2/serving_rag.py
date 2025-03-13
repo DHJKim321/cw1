@@ -7,10 +7,20 @@ from pydantic import BaseModel
 import pandas as pd
 import regex as re
 import os
+import tqdm
 
 DATA_PATH = "task-2/data/movies.csv"
 EMBEDDING_PATH = "task-2/data/embeddings.npy"
 
+# Device selection
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+elif torch.cuda.is_available():
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
+
+# Initialize FastAPI
 app = FastAPI()
 
 # Example documents in memory
@@ -36,6 +46,7 @@ documents = load_context(DATA_PATH)
 EMBED_MODEL_NAME = "intfloat/multilingual-e5-large-instruct"
 embed_tokenizer = AutoTokenizer.from_pretrained(EMBED_MODEL_NAME)
 embed_model = AutoModel.from_pretrained(EMBED_MODEL_NAME)
+embed_model = AutoModel.from_pretrained(EMBED_MODEL_NAME).to(device)
 
 # Basic Chat LLM
 chat_pipeline = pipeline("text-generation", model="Qwen/Qwen2.5-1.5B-Instruct")
@@ -54,16 +65,21 @@ chat_pipeline = pipeline("text-generation", model="Qwen/Qwen2.5-1.5B-Instruct")
 
 def get_embedding(text: str) -> np.ndarray:
     """Compute a simple average-pool embedding."""
-    inputs = embed_tokenizer(text, return_tensors="pt", truncation=True)
+    inputs = embed_tokenizer(text, return_tensors="pt", truncation=True).to(device)
     with torch.no_grad():
         outputs = embed_model(**inputs)
     return outputs.last_hidden_state.mean(dim=1).cpu().numpy()
 
 # Precompute document embeddings
 if os.path.exists(EMBEDDING_PATH):
+    print("Existing embeddings found. Loading...")
     doc_embeddings = np.load(EMBEDDING_PATH)
 else:
-    doc_embeddings = np.vstack([get_embedding(doc) for doc in documents])
+    print("Embeddings not found. Computing...")
+    doc_embeddings = []
+    for doc in tqdm.tqdm(documents):
+        doc_embeddings.append(get_embedding(doc))
+    doc_embeddings = np.vstack(doc_embeddings)
     np.save(EMBEDDING_PATH, doc_embeddings)
 
 ### You may want to use your own top-k retrieval method (task 1)
