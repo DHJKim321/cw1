@@ -4,6 +4,12 @@ from transformers import AutoTokenizer, AutoModel, pipeline
 from fastapi import FastAPI
 import uvicorn
 from pydantic import BaseModel
+import pandas as pd
+import regex as re
+import os
+
+DATA_PATH = "task-2/data/movies.csv"
+EMBEDDING_PATH = "task-2/data/embeddings.npy"
 
 app = FastAPI()
 
@@ -13,6 +19,18 @@ documents = [
     "Dogs are domesticated mammals, not natural wild animals.",
     "Hummingbirds can hover in mid-air by rapidly flapping their wings."
 ]
+
+# Load data
+def clean_text(text):
+    return re.sub(r'\[\d+\]', '', text)
+
+def load_context(data_path):
+    df = pd.read_csv(data_path)
+    documents = "Title: " + df["Title"] + " Plot: " + df["Plot"]
+    documents = documents.apply(clean_text).tolist()
+    return documents
+
+documents = load_context(DATA_PATH)
 
 # 1. Load embedding model
 EMBED_MODEL_NAME = "intfloat/multilingual-e5-large-instruct"
@@ -42,7 +60,11 @@ def get_embedding(text: str) -> np.ndarray:
     return outputs.last_hidden_state.mean(dim=1).cpu().numpy()
 
 # Precompute document embeddings
-doc_embeddings = np.vstack([get_embedding(doc) for doc in documents])
+if os.path.exists(EMBEDDING_PATH):
+    doc_embeddings = np.load(EMBEDDING_PATH)
+else:
+    doc_embeddings = np.vstack([get_embedding(doc) for doc in documents])
+    np.save(EMBEDDING_PATH, doc_embeddings)
 
 ### You may want to use your own top-k retrieval method (task 1)
 def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
