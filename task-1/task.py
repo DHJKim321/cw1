@@ -213,7 +213,7 @@ def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
 
     
 def our_knn_np(N, D, A, X, K, distance_metric="l2"):
-  
+
     if A.shape != (N, D) or X.shape != (D,):
         raise ValueError("Shape mismatch: A should be (N, D) and X should be (D,)")
 
@@ -447,13 +447,12 @@ def our_kmeans_raw_kernels(N, D, A, K, block_size=128):
             break
         centroids = new_centroids
         
-    return labels
-
+    return labels, centroids
 
 # -------------------------------------------------------------------------
 # CUPY Basic
 
-def our_kmeans_cupy_basic(N, D, A, K, use_kernel=True):
+def our_kmeans_cupy_basic(N, D, A, K):
     """
     Input:
       N (int): Number of vectors.
@@ -489,13 +488,13 @@ def our_kmeans_cupy_basic(N, D, A, K, use_kernel=True):
         
         centroids = new_centroids
         
-    return labels
+    return labels, centroids
 
 
 # -------------------------------------------------------------------------
 # NUMPY CPU
 
-def our_kmeans_numpy(N, D, A, K, use_kernel=True):
+def our_kmeans_numpy(N, D, A, K):
     """
     Input:
       N (int): Number of vectors.
@@ -533,7 +532,7 @@ def our_kmeans_numpy(N, D, A, K, use_kernel=True):
         
         centroids = new_centroids
         
-    return labels
+    return labels, centroids
 
 # TODO add return centroids? piazza mentions main function should have specified input outputs.
 
@@ -582,7 +581,22 @@ def dbscan(A, eps, minPts):
     # Convert labels to list for return type consistency
     labels = labels.tolist()
     
-    return centroids, labels
+    return labels, centroids
+
+# ------------------------------------------------------------------------------------------------
+# Wrapping for test
+def our_kmeans(N, D, A, K):
+    global KMEANS_IMPLEMENTATIONS
+    
+    if KMEANS_IMPLEMENTATIONS == "raw_kernerls":
+        labels, centroids = our_kmeans_raw_kernels(N, D, A, K, block_size=128)
+    elif KMEANS_IMPLEMENTATIONS == "cupy_basic":    
+        labels, centroids = our_kmeans_cupy_basic(N, D, A, K)
+    elif KMEANS_IMPLEMENTATIONS == "numpy":
+        labels, centroids = our_kmeans_numpy(N, D, A, K)
+    elif KMEANS_IMPLEMENTATIONS == "dbscan":
+        labels, centorids = dbscan(A, 0.5, 5)
+    return labels
 
 # ------------------------------------------------------------------------------------------------
 # Your Task 2.2 code here
@@ -590,7 +604,7 @@ def dbscan(A, eps, minPts):
 
 # You can create any kernel here
 
-def our_ann(N, D, A, X, K, use_kernel=True):
+def our_ann_simple(N, D, A, X, K, use_kernel=True):
     """_ann
 
     Args:
@@ -617,7 +631,7 @@ def our_ann(N, D, A, X, K, use_kernel=True):
     
     return top_k_indices
         
-def our_ann_IVFPQ(N, D, A, X, K, M, n_probe, use_kernel=True):
+def our_ann_IVFPQ_numpy(N, D, A, X, K, M, n_probe, use_kernel=True):
     """Approximate Nearest Neighbor search using IVFPQ(Inverted Vectors for Product Quantization)
         Usually, M is 8
         The larger n_probe is, the more accurate the search is, but the slower the search is.
@@ -638,7 +652,7 @@ def our_ann_IVFPQ(N, D, A, X, K, M, n_probe, use_kernel=True):
     dsub = D // M  # Dimensionality of sub-vector
     ksub = 256  # Number of Clusters for sub-vectors
     # Step 1: First-Level Clustering (Coarse Quantization - IVF)
-    centroids, labels = our_kmeans(N, D, A, K, use_kernel=use_kernel)
+    labels, centroids = our_kmeans(N, D, A, K, use_kernel=use_kernel)
     
     # Compute residual vectores (y - q1(y))
     residuals = A - centroids[labels]
@@ -649,12 +663,12 @@ def our_ann_IVFPQ(N, D, A, X, K, M, n_probe, use_kernel=True):
     
     for m in range(M):
         sub_vecs = residuals[:, m * dsub:(m + 1) * dsub] # Extract sub-vectors
-        pq_codebooks[m], _ = our_kmeans(N, dsub, sub_vecs, ksub, use_kernel=use_kernel)
+        _, pq_codebooks[m] = our_kmeans(N, dsub, sub_vecs, ksub, use_kernel=use_kernel)
         pq_codes[:, m] = vq(sub_vecs, pq_codebooks[m]) # Assign to PQ centroids
         
     # Step 3: Query Processintg
     # Find the closest 'n_probe' clusters to the query vector
-    closest_clusters = cp.argsort(distance_l2(centroids, X, use_kernel=use_kernel))[:n_probe]
+    closest_clusters = np.argsort(distance_l2(centroids, X, use_kernel=use_kernel))[:n_probe]
     
     # Retrieve points in the selected clusters
     candidates = []
@@ -695,7 +709,14 @@ def our_ann_IVFPQ(N, D, A, X, K, M, n_probe, use_kernel=True):
     distances.sort(key=lambda x: x[1])
     return [idx for idx, _ in distances[:K]]
 
-
+def our_ann(N, D, A, X, K):
+    global ANN_IMPLEMENTATIONS
+    
+    if ANN_IMPLEMENTATIONS == "simple":
+        top_k_indices = our_ann_simple(N, D, A, X, K, use_kernel=True)
+    elif ANN_IMPLEMENTATIONS == "IVFPQ_numpy":
+        top_k_indices = our_ann_IVFPQ_numpy(N, D, A, X, K, M=8, n_probe=3, use_kernel=True)
+    return top_k_indices
 
 
 # ------------------------------------------------------------------------------------------------
@@ -837,7 +858,7 @@ def test_knn():
     
 def test_our_ann():
     # Generate test data
-    N, D, A, X, K = testdata_ann()
+    N, D, A, X, K = testdata_ann("")
     
     # Convert data to CuPy arrays
     A_cp = cp.asarray(A)
@@ -860,9 +881,34 @@ def test_our_ann():
     
     print("Test passed!")
     
-def test_our_ann_IVFPQ():
+def test_our_ann_IVFPQ_numpy():
     # Generate test data
-    N, D, A, X, K, M, n_probe = testdata_ann()
+    N, D, A, X, K, = testdata_ann("")
+    
+    # Convert data to CuPy arrays
+    A_cp = np.asarray(A)
+    X_cp = np.asarray(X)
+    
+    # Run the our_ann_IVFPQ function
+    top_k_indices = our_ann(N, D, A_cp, X_cp, K)
+    
+    # Convert the result back to NumPy for assertion
+    top_k_indices_np = np.asnumpy(top_k_indices)
+    
+    # Check the length of the result
+    assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
+    
+    # Check if the indices are within the valid range
+    assert np.all(top_k_indices_np < N), "Some indices are out of range"
+    
+    print("top_k_indices_np.shape:", top_k_indices_np.shape)
+    print("top_k_indices_np:", top_k_indices_np)
+    
+    print("Test passed!")
+    
+def test_our_ann_IVFPQ_cupy_basic():
+    # Generate test data
+    N, D, A, X, K, M, n_probe = testdata_ann("")
     
     # Convert data to CuPy arrays
     A_cp = cp.asarray(A)
@@ -894,6 +940,14 @@ def recall_rate(list1, list2):
     return len(set(list1) & set(list2)) / len(list1)
 
 if __name__ == "__main__":
+    ### Test Ann
+    # KMEANS_IMPLEMENTATION = "numpy" # or "raw_kernels", "cupy_basic", "numpy", or, "dbscan"
+    ANN_IMPLEMENTATIONS = "IVFPQ_numpy" # "simple", "IVFPQ_numpy", or "IVFPQ_cupy_basic"
+    test_our_ann_IVFPQ_numpy()
+    
+    
+    
+    
     # ### Test Distance Functions
     # dimensions = [2, 2**15]
     # N = 30
@@ -985,7 +1039,7 @@ if __name__ == "__main__":
     
     ### Test KNN
 
-     # Set parameters
+    # Set parameters
     N, D, K = 4000000, 2, 10
 
     # Generate random dataset
@@ -1033,6 +1087,4 @@ if __name__ == "__main__":
 
     ### Test KMeans
     
-    ### Test Ann
-    # test_our_ann()
-    # test_our_ann_IVFPQ()
+
