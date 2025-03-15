@@ -1,16 +1,22 @@
 import torch
 import numpy as np
 from transformers import AutoTokenizer, AutoModel, pipeline
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 import uvicorn
 from pydantic import BaseModel
 import pandas as pd
 import regex as re
 import os
 import tqdm
+from concurrent.futures import Future
+import time
+import queue
+import threading
 
 DATA_PATH = "task-2/data/movies.csv"
 EMBEDDING_PATH = "task-2/data/embeddings.npy"
+MAX_BATCH_SIZE = 8
+MAX_WAITING_TIME = 1
 
 # Device selection
 if torch.backends.mps.is_available():
@@ -22,6 +28,7 @@ else:
 
 # Initialize FastAPI
 app = FastAPI()
+request_queue = queue.Queue()
 
 # Example documents in memory
 documents = [
@@ -109,14 +116,35 @@ class QueryRequest(BaseModel):
     query: str
     k: int = 2
 
+# Background processing thread
+def process_requests():
+    while True:
+        batch = []
+        start_time = time.time()
+
+        while len(batch) < MAX_BATCH_SIZE and (time.time() - start_time) < MAX_WAITING_TIME:
+            try:
+                batch.append(request_queue.get(timeout=MAX_WAITING_TIME))  # Correct tuple handling
+            except queue.Empty:
+                break
+
+        if batch:
+            results = [(req, fut, rag_pipeline(req.query, req.k)) for req, fut in batch]
+            for req, fut, result in results:
+                fut.set_result(result)
+
+# Start the background thread
+threading.Thread(target=process_requests, daemon=True).start()
+
+async def wait_for_future(future: Future):
+    future.result()  # This will complete in the background
+
 @app.post("/rag")
-def predict(payload: QueryRequest):
-    result = rag_pipeline(payload.query, payload.k)
-    
-    return {
-        "query": payload.query,
-        "result": result,
-    }
+def predict(payload: QueryRequest, background_tasks: BackgroundTasks):
+    future = Future()
+    request_queue.put({"payload": payload, "future": future})
+    background_tasks.add_task(wait_for_future, future)  # Non-blocking response
+    return {"query": payload.query, "result": future.result()}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
