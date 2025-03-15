@@ -31,11 +31,11 @@ app = FastAPI()
 request_queue = queue.Queue()
 
 # Example documents in memory
-documents = [
-    "Cats are small furry carnivores that are often kept as pets.",
-    "Dogs are domesticated mammals, not natural wild animals.",
-    "Hummingbirds can hover in mid-air by rapidly flapping their wings."
-]
+# documents = [
+#     "Cats are small furry carnivores that are often kept as pets.",
+#     "Dogs are domesticated mammals, not natural wild animals.",
+#     "Hummingbirds can hover in mid-air by rapidly flapping their wings."
+# ]
 
 # Load data
 def clean_text(text):
@@ -97,19 +97,20 @@ def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
     return [documents[i] for i in top_k_indices]
 
 def rag_pipeline(query: str, k: int = 2) -> str:
-    # Step 1: Input embedding
     query_emb = get_embedding(query)
-    
-    # Step 2: Retrieval
     retrieved_docs = retrieve_top_k(query_emb, k)
-    
-    # Construct the prompt from query + retrieved docs
+
     context = "\n".join(retrieved_docs)
-    prompt = f"Question: {query}\nContext:\n{context}\nAnswer:"
-    
-    # Step 3: LLM Output
-    generated = chat_pipeline(prompt, max_length=50, do_sample=True)[0]["generated_text"]
-    return generated
+    prompt = f"Question: {query}\n\nContext:\n{context}\n\nAnswer:\n"
+
+    generated_text = chat_pipeline(prompt, max_new_tokens=50, do_sample=True)[0]["generated_text"]
+
+    answer_start = generated_text.find("Answer:")
+    if answer_start != -1:
+        generated_text = generated_text[answer_start + len("Answer:"):].strip()
+
+    return generated_text
+
 
 # Define request model
 class QueryRequest(BaseModel):
@@ -129,7 +130,7 @@ def process_requests():
                 break
 
         if batch:
-            results = [(req, fut, rag_pipeline(req.query, req.k)) for req, fut in batch]
+            results = [(request['payload'], request['future'], rag_pipeline(request['payload'].query, request['payload'].k)) for request in batch]
             for req, fut, result in results:
                 fut.set_result(result)
 
