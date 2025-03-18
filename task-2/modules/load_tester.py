@@ -1,33 +1,56 @@
 import os, sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
-
 import requests
 import time
 import concurrent.futures
+import numpy as np
 
-# Load balancer URL
 URL = "http://127.0.0.1:8000/rag"
 
-# Sample request payload
 payload = {"query": "Tell me about a movie with time travel", "k": 3}
 
-# Function to send a request
 def send_request():
     start_time = time.time()
-    response = requests.post(URL, json=payload)
-    end_time = time.time()
-    return response.status_code, response.json(), round(end_time - start_time, 2)
+    try:
+        response = requests.post(URL, json=payload, timeout=10)
+        end_time = time.time()
+        latency = round(end_time - start_time, 3)
+        return response.status_code, latency
+    except requests.exceptions.RequestException:
+        return 0, None
 
-# Test function for concurrent requests
 def run_load_test(concurrent_requests=10, total_requests=50):
     print(f"Starting load test with {concurrent_requests} concurrent requests and {total_requests} total requests.")
 
+    latencies = []
+    errors = 0
+
+    start_overall = time.time()
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrent_requests) as executor:
         futures = [executor.submit(send_request) for _ in range(total_requests)]
 
         for future in concurrent.futures.as_completed(futures):
-            status, result, latency = future.result()
-            print(f"Status: {status}, Response: {result}, Latency: {latency}s")
+            status, latency = future.result()
+            if status != 200 or latency is None:
+                errors += 1
+            else:
+                latencies.append(latency)
+
+    end_overall = time.time()
+    test_duration = end_overall - start_overall
+
+    if latencies:
+        latencies_np = np.array(latencies)
+        print("\n--- Load Test Results ---")
+        print(f"Total Requests: {total_requests}")
+        print(f"Total Errors: {errors} ({(errors/total_requests)*100:.2f}%)")
+        print(f"Total Duration: {test_duration:.2f}s")
+        print(f"Throughput: {total_requests / test_duration:.2f} requests/sec")
+        print(f"Average Latency: {latencies_np.mean():.3f}s")
+        print(f"Median Latency: {np.median(latencies_np):.3f}s")
+        print(f"95th Percentile Latency: {np.percentile(latencies_np, 95):.3f}s")
+        print(f"Max Latency: {latencies_np.max():.3f}s")
+    else:
+        print("No successful responses.")
 
 if __name__ == "__main__":
-    run_load_test(concurrent_requests=5, total_requests=20)  # Simulate 5 users sending 20 requests
+    run_load_test(concurrent_requests=5, total_requests=50)
