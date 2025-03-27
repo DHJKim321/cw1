@@ -1,4 +1,6 @@
 import torch
+import warnings
+warnings.filterwarnings("ignore")
 import numpy as np
 from transformers import AutoTokenizer, AutoModel, pipeline
 from fastapi import FastAPI, BackgroundTasks
@@ -12,11 +14,15 @@ from concurrent.futures import Future
 import time
 import queue
 import threading
+from modules.args_extractor import get_args
 
-DATA_PATH = "task-2/data/movies.csv"
-EMBEDDING_PATH = "task-2/data/embeddings.npy"
-MAX_BATCH_SIZE = 8
-MAX_WAITING_TIME = 1
+args = get_args()
+
+DATA_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data', 'movies.csv'))
+EMBEDDING_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data', 'embeddings.npy'))
+MAX_BATCH_SIZE = args.batch_size
+MAX_WAITING_TIME = args.max_waiting_time
+use_queue_batching = args.use_queue_batching
 
 # Device selection
 if torch.backends.mps.is_available():
@@ -130,7 +136,6 @@ class QueryRequest(BaseModel):
     query: str
     k: int = 2
 
-# Background processing thread
 def process_requests():
     while True:
         batch = []
@@ -138,7 +143,7 @@ def process_requests():
 
         while len(batch) < MAX_BATCH_SIZE and (time.time() - start_time) < MAX_WAITING_TIME:
             try:
-                batch.append(request_queue.get(timeout=MAX_WAITING_TIME))  # Correct tuple handling
+                batch.append(request_queue.get(timeout=MAX_WAITING_TIME))
             except queue.Empty:
                 break
 
@@ -161,4 +166,5 @@ def predict(payload: QueryRequest, background_tasks: BackgroundTasks):
     return {"query": payload.query, "result": future.result()}
 
 if __name__ == "__main__":
+    print("Starting RAG service...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
