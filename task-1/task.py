@@ -7,6 +7,10 @@ import json
 import scipy
 from scipy.cluster.vq import vq
 from test import testdata_kmeans, testdata_knn, testdata_ann
+from time_log_decorater import time_log
+from scipy.spatial.distance import cdist
+# For Test
+from sklearn.cluster import KMeans
 
 # You can create any kernel here
 subtract_square = cp.ElementwiseKernel('float32 x, float32 y', 
@@ -126,6 +130,14 @@ def distance_l2(A, X, use_kernel=True):
         V = cp.linalg.norm(A - X, axis=1)  # GPU-accelerated L2 norm
     return V
 
+def distance_l2_squared(A, X, use_kernel=True):
+    if use_kernel:
+        W = subtract_square(A, X)  # Element-wise squared difference (N, D)
+        U = _sum(W, axis=1)  # Sum across D (N,)
+    else:
+        U = cp.sum((A - X) ** 2, axis=1)  # Efficiently compute squared L2 distance
+    return U
+
 def distance_manhattan(A, X, use_kernel=True):
     if use_kernel:
         Z = subtract_abs(A, X)  # Element-wise absolute difference (N, D)
@@ -152,7 +164,10 @@ def distance_cosine_np(X, Y):
     return V
 
 def distance_l2_np(X, Y):
-    return np.linalg.norm(X - Y) 
+    return np.linalg.norm(X - Y, axis=1)
+
+def distance_l2_squared_np(X, Y):
+    return np.sum((X - Y) ** 2, axis=1)
 
 def distance_dot_np(X, Y):
     return np.dot(X, Y)
@@ -166,7 +181,7 @@ def distance_manhattan_np(X, Y):
 
 # You can create any kernel here
 
-def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
+def our_knn_cupy_basic(N, D, A, X, K, distance_metric="l2", use_kernel = True):
     """_knn
 
     Args:
@@ -181,6 +196,7 @@ def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
     Returns:
         _type_: _description_
     """
+
 
     if A.shape != (N, D) or X.shape != (D,):
         raise ValueError("Shape mismatch: A should be (N, D) and X should be (D,)")
@@ -198,7 +214,9 @@ def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
     if distance_metric == "cosine":
         distances = distance_cosine(A, X[None, :], use_kernel)  # Broadcast X across all rows of A
     elif distance_metric == "l2":
-        distances = distance_l2(A, X[None, :], use_kernel)  # Apply L2 distance using kernel
+        distances = distance_l2(A, X, use_kernel)  # Apply L2 distance using kernel
+    elif distance_metric == "l2_squared":
+        distances = distance_l2_squared(A, X, use_kernel)
     elif distance_metric == "dot":
         distances = -distance_dot(A, X[None, :], use_kernel)  # Apply dot product distance
     elif distance_metric == "manhattan":
@@ -211,21 +229,23 @@ def our_knn(N, D, A, X, K, distance_metric="l2", use_kernel = True):
 
     return top_k_indices
 
-    
+
 def our_knn_np(N, D, A, X, K, distance_metric="l2"):
 
     if A.shape != (N, D) or X.shape != (D,):
         raise ValueError("Shape mismatch: A should be (N, D) and X should be (D,)")
 
-    # Compute distances based on chosen metric
+    # Compute distances based on chosen metric # Comment: Should use matrix multiplication, not multiplying each row iteratively, inefficient process
     if distance_metric == "cosine":
-        distances =  np.array([distance_cosine_np(A[i], X) for i in range(N)])
+        distances =  np.array(distance_cosine_np(A, X))
     elif distance_metric == "l2":
-        distances = np.array([distance_l2_np(A[i], X) for i in range(N)])
+        distances = np.array(distance_l2_np(A, X))
+    elif distance_metric == "l2_squared":
+        distances = np.array(distance_l2_squared_np(A, X))
     elif distance_metric == "dot":
-        distances = -np.array([distance_dot_np(A[i], X) for i in range(N)])
+        distances = -np.array(distance_dot_np(A, X))
     elif distance_metric == "manhattan":
-        distances = np.array([distance_manhattan_np(A[i], X) for i in range(N)])
+        distances = np.array(distance_manhattan_np(A, X))
     else:
         raise ValueError("Unsupported distance metric. Choose from ['l2', 'cosine', 'manhattan', 'dot']")
 
@@ -252,6 +272,8 @@ def our_knn_nearest_batch(N, D, A, X, K, batch_size=100000, distance_metric="l2"
             distances = distance_cosine(batch_A, X[None, :], use_kernel)  # Broadcast X across all rows of A
         elif distance_metric == "l2":
             distances = distance_l2(batch_A, X[None, :], use_kernel)  # Apply L2 distance using kernel
+        elif distance_metric == "l2_squared":
+            distances = distance_l2_squared(batch_A, X[None, :], use_kernel)
         elif distance_metric == "dot":
             distances = -distance_dot(batch_A, X[None, :], use_kernel)  # Apply dot product distance
         elif distance_metric == "manhattan":
@@ -273,9 +295,8 @@ def our_knn_nearest_batch(N, D, A, X, K, batch_size=100000, distance_metric="l2"
 
     # Get final Top-K across all batches
     final_top_k = cp.argsort(top_k_distances)[:K]
-
-    return top_k_results[final_top_k] 
-
+    top_k_indices = top_k_results[final_top_k]
+    return top_k_indices 
 
 
 # ------------------------------------------------------------------------------------------------
@@ -470,6 +491,7 @@ def our_kmeans_cupy_basic(N, D, A, K):
     centroids = A[indices, :]
     
     for _ in range(max_iterations):
+        # Usign Kernel, getting l2 distance
         W = subtract_square(A[:, None, :], centroids[None, :, :])
         distances = sum_sqrt(W, axis=2)
         labels = cp.argmin(distances, axis=1)
@@ -490,6 +512,65 @@ def our_kmeans_cupy_basic(N, D, A, K):
         
     return labels, centroids
 
+def our_kmeans_cupy_basic_batch(N, D, A, K, batch_size=10000):
+    """
+    Efficient CuPy K-Means implementation with batched memory-efficient distance computation.
+    
+    Args:
+      N (int): Number of vectors.
+      D (int): Dimension of each vector.
+      A (cupy.ndarray): Collection of vectors (N x D).
+      K (int): Number of clusters.
+      batch_size (int): Number of data points to process per batch to reduce memory footprint.
+    
+    Returns:
+      cp.ndarray: Cluster IDs for each vector.
+      cp.ndarray: Cluster centers.
+    """
+    max_iterations = 100
+
+    A = cp.asarray(A, dtype=cp.float32)  # Ensure A is in GPU memory
+    indices = cp.random.choice(N, K, replace=False)
+    centroids = A[indices, :]
+
+    for _ in range(max_iterations):
+        labels = cp.zeros(N, dtype=cp.int32)
+
+        # Process distances in batches to avoid high memory usage
+        for batch_start in range(0, N, batch_size):
+            batch_end = min(batch_start + batch_size, N)
+            A_batch = A[batch_start:batch_end]  # Shape (batch_size, D)
+
+            # Compute squared L2 distance in a memory-efficient way
+            dists = (
+                cp.sum(A_batch ** 2, axis=1, keepdims=True)
+                - 2 * A_batch @ centroids.T
+                + cp.sum(centroids ** 2, axis=1)
+            )  # Shape (batch_size, K)
+
+            labels[batch_start:batch_end] = cp.argmin(dists, axis=1)
+
+        # Compute new centroids
+        new_centroids = cp.zeros_like(centroids)
+        counts = cp.zeros(K, dtype=cp.float32)
+
+        # Sum up points in each cluster
+        cp.add.at(new_centroids, labels, A)
+        cp.add.at(counts, labels, 1)
+
+        # Avoid division by zero
+        counts = cp.where(counts > 0, counts, 1)
+        new_centroids /= counts[:, None]
+
+        # Convergence check
+        if cp.allclose(centroids, new_centroids, atol=1e-6):
+            break
+
+        centroids = new_centroids
+
+    return labels, centroids
+
+
 
 # -------------------------------------------------------------------------
 # NUMPY CPU
@@ -505,7 +586,7 @@ def our_kmeans_numpy(N, D, A, K):
     Returns:
       np.ndarray: Cluster IDs for each vector.
     """
-    
+
     max_iterations = 100
 
     A = np.asarray(A, dtype=np.float32)
@@ -532,6 +613,64 @@ def our_kmeans_numpy(N, D, A, K):
         
         centroids = new_centroids
         
+    return labels, centroids
+
+def our_kmeans_numpy_batch(N, D, A, K, batch_size=10000):
+    """
+    Efficient NumPy K-Means implementation with batched memory-efficient distance computation.
+
+    Args:
+      N (int): Number of vectors.
+      D (int): Dimension of each vector.
+      A (numpy.ndarray): Collection of vectors (N x D).
+      K (int): Number of clusters.
+      batch_size (int): Number of data points to process per batch to reduce memory footprint.
+
+    Returns:
+      np.ndarray: Cluster IDs for each vector.
+      np.ndarray: Cluster centers.
+    """
+    max_iterations = 100
+
+    A = np.asarray(A, dtype=np.float32)  # Ensure A is in CPU memory
+    indices = np.random.choice(N, K, replace=False)
+    centroids = A[indices, :]
+
+    for _ in range(max_iterations):
+        labels = np.zeros(N, dtype=np.int32)
+
+        # Process distances in batches to avoid high memory usage
+        for batch_start in range(0, N, batch_size):
+            batch_end = min(batch_start + batch_size, N)
+            A_batch = A[batch_start:batch_end]  # Shape (batch_size, D)
+
+            # Compute squared L2 distance in a memory-efficient way
+            dists = (
+                np.sum(A_batch ** 2, axis=1, keepdims=True)
+                - 2 * A_batch @ centroids.T
+                + np.sum(centroids ** 2, axis=1)
+            )  # Shape (batch_size, K)
+
+            labels[batch_start:batch_end] = np.argmin(dists, axis=1)
+
+        # Compute new centroids
+        new_centroids = np.zeros_like(centroids)
+        counts = np.zeros(K, dtype=np.float32)
+
+        # Sum up points in each cluster
+        np.add.at(new_centroids, labels, A)
+        np.add.at(counts, labels, 1)
+
+        # Avoid division by zero
+        counts = np.where(counts > 0, counts, 1)
+        new_centroids /= counts[:, None]
+
+        # Convergence check
+        if np.allclose(centroids, new_centroids, atol=1e-6):
+            break
+
+        centroids = new_centroids
+
     return labels, centroids
 
 # TODO add return centroids? piazza mentions main function should have specified input outputs.
@@ -583,8 +722,396 @@ def dbscan(A, eps, minPts):
     
     return labels, centroids
 
+
+# ------------------------------------------------------------------------------------------------
+# Your Task 2.2 code here
+# ------------------------------------------------------------------------------------------------
+
+# You can create any kernel here
+# ------------------------------------------------------------------------------------------------
+# IVFPQ Numpy Version
+def product_quantization_numpy(D, M, A):
+    """
+    Performs Product Quantization (PQ) on the dataset.
+    """
+    assert D % M == 0, "D should be divisible by M"
+
+    sub_dim = D // M
+    codebooks = []
+    encoded_data = []
+
+    A = np.array(A, dtype=np.float32)
+    
+    for i in range(M):
+        sub_vectors = A[:, i * sub_dim : (i + 1) * sub_dim]
+        labels, centroids = our_kmeans_numpy_batch(sub_vectors.shape[0], sub_dim, sub_vectors, 256)
+        codebooks.append(centroids)
+        encoded_data.append(labels)
+
+    return codebooks, np.array(encoded_data, dtype=np.int32).T
+
+def ivfpq_index_numpy(N, D, A, num_clusters=100, M=8):
+    """
+    Indexes dataset A using IVF and PQ.
+    """
+    A = np.array(A, dtype=np.float32)
+    cluster_ids, cluster_centers = our_kmeans_numpy_batch(N, D, A, num_clusters)
+    
+    ivf_lists = {i: [] for i in range(num_clusters)}
+    for i, cid in enumerate(cluster_ids):
+        ivf_lists[int(cid)].append(i)
+    
+    codebooks, encoded_data = product_quantization_numpy(D, M, A)
+    
+    return ivf_lists, cluster_centers, codebooks, encoded_data
+@time_log
+def search_ivfpq_numpy(X, ivf_lists, cluster_centers, codebooks, encoded_data, A, K=50, num_probe=10, M=8, D=64, candidate_factor=2):
+    """
+    Performs an IVFPQ ANN search with batched PQ distance computation + final re-ranking.
+    """
+    start_time = time.perf_counter()
+
+    # 1) Find the closest clusters using IVF
+    X = np.array(X, dtype=np.float32)
+    
+    cluster_distances = distance_l2_np(cluster_centers, X)
+    closest_clusters = np.argsort(cluster_distances)[:num_probe]
+    
+    # gather candidates
+    candidates_list = []
+    for cid in closest_clusters:
+        candidates_list.extend(ivf_lists[int(cid)])
+    
+    # convert candidates to numpy array
+    candidates = np.array(candidates_list, dtype=np.int32)
+    if candidates.size == 0:
+        # no candidates found
+        return []
+    
+    sub_dim = D // M
+
+    # 2) Batching PQ distance computation
+    big_reconstructed = np.zeros((candidates.shape[0], M, sub_dim), dtype=np.float32)
+    
+    for i in range(M):
+        code_ids = encoded_data[candidates, i]
+        big_reconstructed[:, i, :] = codebooks[i][code_ids]
+    
+    # build query sub-vectors
+    X_subvectors = np.zeros((M, sub_dim), dtype=np.float32)
+    for i in range(M):
+        X_subvectors[i] = X[i * sub_dim : (i + 1) * sub_dim]
+    
+    diff = big_reconstructed - X_subvectors[None, :, :]
+    dist_vector = np.sqrt(np.sum(diff**2, axis=(1, 2)))
+    
+    # sort by approximate PQ distance
+    sorted_indices = np.argsort(dist_vector)
+    distances_all = [(int(candidates[i]), float(dist_vector[i])) for i in range(len(candidates))]
+    distances_all.sort(key=lambda x: x[1])
+    
+    # 3) Final Re-Ranking (Exact Distance) on top subset
+    refine_size = candidate_factor * K
+    approx_top = distances_all[:refine_size]
+    
+    exact_reranked = []
+    query_full_unnorm = X * (np.linalg.norm(X) + 1e-6)
+    for (idx, _) in approx_top:
+        data_unnorm = A[idx] * (np.linalg.norm(A[idx]) + 1e-6)
+        diff_full = data_unnorm - query_full_unnorm
+        dist = np.linalg.norm(diff_full)
+        exact_reranked.append((idx, dist))
+    
+    exact_reranked.sort(key=lambda x: x[1])
+    
+    end_time = time.perf_counter()
+    print(f"Query Time (Batched + Re-Rank): {(end_time - start_time) * 1000:.3f} ms")
+    
+    return [idx for idx, _ in exact_reranked[:K]]
+
+
+def our_ann_numpy(N, D, A, X, K):
+    """
+    IVFPQ ANN algorithm wrapper.
+    """
+    num_clusters = 200
+    M = 8  # Number of PQ subspaces
+    
+    ivf_lists, cluster_centers, codebooks, encoded_data = ivfpq_index_numpy(N, D, A, num_clusters, M)
+    top_k_indices = search_ivfpq_numpy(
+        X, ivf_lists, cluster_centers, codebooks, encoded_data, A, 
+        K=K, num_probe=40, M=M, D=D, candidate_factor=2
+    )
+    
+    return top_k_indices
+
+# ------------------------------------------------------------------------------------------------
+# IVFPQ CuPy Version
+def product_quantization_cupy(D, M, A):
+    """
+    Performs Product Quantization (PQ) on the dataset.
+    """
+    assert D % M == 0, "D should be divisible by M"
+    
+    sub_dim = D // M
+    codebooks = []
+    encoded_data = []
+    
+    A = cp.array(A, dtype=cp.float32)
+    
+    for i in range(M):
+        sub_vectors = A[:, i * sub_dim : (i + 1) * sub_dim]
+        labels, centroids = our_kmeans_cupy_basic_batch(sub_vectors.shape[0], sub_dim, sub_vectors, 256)
+        codebooks.append(centroids)
+        encoded_data.append(labels)
+    
+    return codebooks, cp.array(encoded_data, dtype=cp.int32).T
+
+def ivfpq_index_cupy(N, D, A, num_clusters=100, M=8):
+    """
+    Indexes dataset A using IVF and PQ.
+    """
+    A = cp.array(A, dtype=cp.float32)
+    cluster_ids, cluster_centers = our_kmeans_cupy_basic_batch(N, D, A, num_clusters)
+    cluster_ids = cluster_ids.get()  # Convert to NumPy to use as dictionary keys
+    
+    ivf_lists = {i: [] for i in range(num_clusters)}
+    for i, cid in enumerate(cluster_ids):
+        ivf_lists[cid].append(i)
+    
+    codebooks, encoded_data = product_quantization_cupy(D, M, A)
+    
+    return ivf_lists, cluster_centers, codebooks, encoded_data
+
+@time_log
+def search_ivfpq_cupy(X, ivf_lists, cluster_centers, codebooks, encoded_data, A, K=50, num_probe=10, M=8, D=64, candidate_factor=2):
+    """
+    Performs an IVFPQ ANN search.
+    """
+
+    X = cp.array(X, dtype=cp.float32)
+
+    cluster_distances = distance_l2(cluster_centers, X, use_kernel=False)
+    closest_clusters = cp.argsort(cluster_distances)[:num_probe]
+    
+    # gather candidates
+    candidates_list = []
+    for cid in cp.asnumpy(closest_clusters):
+        candidates_list.extend(ivf_lists[int(cid)])
+
+    # convert candidates to cupy array
+    candidates = cp.array(candidates_list, dtype=cp.int32)
+    if candidates.size == 0:
+        # no candidates found
+        return []
+    
+    sub_dim = D // M
+    # 2) Batching PQ distance computation
+    # build big_reconstructed shape: (len(candidates), M, sub_dim)
+    big_reconstructed = cp.zeros((candidates.shape[0], M, sub_dim), dtype=cp.float32)
+
+    for i in range(M):
+        code_ids = encoded_data[candidates, i]  # shape (num_candidates,)
+        big_reconstructed[:, i, :] = codebooks[i][code_ids]
+
+    # build query sub-vectors shape (M, sub_dim)
+    X_subvectors = cp.zeros((M, sub_dim), dtype=cp.float32)
+    for i in range(M):
+        X_subvectors[i] = X[i * sub_dim : (i + 1) * sub_dim]
+
+    # diff shape: (num_candidates, M, sub_dim)
+    diff = big_reconstructed - X_subvectors[None, :, :]
+    dist_vector = cp.sqrt(cp.sum(diff**2, axis=(1, 2)))  # shape (num_candidates,)
+
+    # sort by approximate PQ distance
+    dist_vector_cpu = cp.asnumpy(dist_vector)
+    candidates_cpu = cp.asnumpy(candidates)
+
+    distances_all = [(int(candidates_cpu[i]), float(dist_vector_cpu[i])) for i in range(len(candidates_cpu))]
+    # we only actually need to sort them all if we plan final re-ranking on top subset
+    distances_all.sort(key=lambda x: x[1])
+    
+    # ---------------------
+    # Final Re-Ranking (Exact Distance)
+    refine_size = candidate_factor * K  # e.g., 2*K or 4*K
+    approx_top = distances_all[:refine_size]
+    
+    # Convert A to Cupy if it's not already
+    if not isinstance(A, cp.ndarray):
+        A = cp.array(A, dtype=cp.float32)
+    
+    # We'll compute exact L2 distances in the original D=64 space
+    exact_reranked = []
+    query_full = cp.array(X, copy=True)  # shape (D,)
+    query_full_unnorm = query_full * (cp.linalg.norm(X) + 1e-6)  
+    # If your data A was normalized, you'd keep it the same.
+    
+    for (idx, _) in approx_top:
+        data_unnorm = A[idx] * cp.linalg.norm(A[idx])
+        diff = data_unnorm - query_full_unnorm
+        dist = cp.linalg.norm(diff)
+        exact_reranked.append((idx, dist))
+    
+    exact_reranked.sort(key=lambda x: x[1])
+    
+
+    return [idx for idx, _ in exact_reranked[:K]]
+
+def our_ann_cupy_basic(N, D, A, X, K):
+    """
+    IVFPQ ANN algorithm wrapper.
+    """
+    num_clusters = 200
+    M = 8 # Number of PQ subspaces
+    
+    ivf_lists, cluster_centers, codebooks, encoded_data = ivfpq_index_cupy(N, D, A, num_clusters, M)
+    top_k_indices = search_ivfpq_cupy(X, ivf_lists, cluster_centers, codebooks, encoded_data, A, K, num_probe=40, M=M, D=D)
+    
+    return top_k_indices
+
+# ------------------------------------------------------------------------------------------------
+# IVFPQ Raw Kernerls Version
+def product_quantization_raw_kernerls(D, M, A):
+    """
+    Performs Product Quantization (PQ) on the dataset.
+    """
+    assert D % M == 0, "D should be divisible by M"
+    
+    sub_dim = D // M
+    codebooks = []
+    encoded_data = []
+    
+    A = cp.array(A, dtype=cp.float32)
+    
+    for i in range(M):
+        sub_vectors = A[:, i * sub_dim : (i + 1) * sub_dim]
+        labels, centroids = our_kmeans_cupy_basic_batch(sub_vectors.shape[0], sub_dim, sub_vectors, 256)
+        # labels, centroids = our_kmeans_raw_kernels(sub_vectors.shape[0], sub_dim, sub_vectors, 256)
+        codebooks.append(centroids)
+        encoded_data.append(labels)
+    
+    return codebooks, cp.array(encoded_data, dtype=cp.int32).T
+
+def ivfpq_index_raw_kernerls(N, D, A, num_clusters=100, M=8):
+    """
+    Indexes dataset A using IVF and PQ.
+    """
+    A = cp.array(A, dtype=cp.float32)
+    cluster_ids, cluster_centers = our_kmeans_cupy_basic_batch(N, D, A, num_clusters)
+    # cluster_ids, cluster_centers = our_kmeans_raw_kernels(N, D, A, num_clusters)
+    cluster_ids = cluster_ids.get()  # Convert to NumPy to use as dictionary keys
+    
+    ivf_lists = {i: [] for i in range(num_clusters)}
+    for i, cid in enumerate(cluster_ids):
+        ivf_lists[cid].append(i)
+    
+    codebooks, encoded_data = product_quantization_raw_kernerls(D, M, A)
+    
+    return ivf_lists, cluster_centers, codebooks, encoded_data
+
+@time_log
+def search_ivfpq_raw_kernels(X, ivf_lists, cluster_centers, codebooks, encoded_data, A, K=50, num_probe=10, M=8, D=64, candidate_factor=2):
+    """
+    Performs an IVFPQ ANN search.
+    """
+
+    X = cp.array(X, dtype=cp.float32)
+
+    cluster_distances = distance_l2(cluster_centers, X, use_kernel=True)
+    closest_clusters = cp.argsort(cluster_distances)[:num_probe]
+    
+    # gather candidates
+    candidates_list = []
+    for cid in cp.asnumpy(closest_clusters):
+        candidates_list.extend(ivf_lists[int(cid)])
+
+    # convert candidates to cupy array
+    candidates = cp.array(candidates_list, dtype=cp.int32)
+    if candidates.size == 0:
+        # no candidates found
+        return []
+    
+    sub_dim = D // M
+    # 2) Batching PQ distance computation
+    # build big_reconstructed shape: (len(candidates), M, sub_dim)
+    big_reconstructed = cp.zeros((candidates.shape[0], M, sub_dim), dtype=cp.float32)
+
+    for i in range(M):
+        code_ids = encoded_data[candidates, i]  # shape (num_candidates,)
+        big_reconstructed[:, i, :] = codebooks[i][code_ids]
+
+    # build query sub-vectors shape (M, sub_dim)
+    X_subvectors = cp.zeros((M, sub_dim), dtype=cp.float32)
+    for i in range(M):
+        X_subvectors[i] = X[i * sub_dim : (i + 1) * sub_dim]
+
+    # diff shape: (num_candidates, M, sub_dim)
+    diff = big_reconstructed - X_subvectors[None, :, :]
+    dist_vector = cp.sqrt(cp.sum(diff**2, axis=(1, 2)))  # shape (num_candidates,)
+
+    # sort by approximate PQ distance
+    dist_vector_cpu = cp.asnumpy(dist_vector)
+    candidates_cpu = cp.asnumpy(candidates)
+
+    distances_all = [(int(candidates_cpu[i]), float(dist_vector_cpu[i])) for i in range(len(candidates_cpu))]
+    # we only actually need to sort them all if we plan final re-ranking on top subset
+    distances_all.sort(key=lambda x: x[1])
+    
+    # ---------------------
+    # Final Re-Ranking (Exact Distance)
+    refine_size = candidate_factor * K  # e.g., 2*K or 4*K
+    approx_top = distances_all[:refine_size]
+    
+    # Convert A to Cupy if it's not already
+    if not isinstance(A, cp.ndarray):
+        A = cp.array(A, dtype=cp.float32)
+    
+    # We'll compute exact L2 distances in the original D=64 space
+    exact_reranked = []
+    query_full = cp.array(X, copy=True)  # shape (D,)
+    query_full_unnorm = query_full * (cp.linalg.norm(X) + 1e-6)  
+    # If your data A was normalized, you'd keep it the same.
+    
+    for (idx, _) in approx_top:
+        data_unnorm = A[idx] * cp.linalg.norm(A[idx])
+        diff = data_unnorm - query_full_unnorm
+        dist = cp.linalg.norm(diff)
+        exact_reranked.append((idx, dist))
+    
+    exact_reranked.sort(key=lambda x: x[1])
+    
+
+    return [idx for idx, _ in exact_reranked[:K]]
+
+def our_ann_raw_kernerls(N, D, A, X, K):
+    """
+    IVFPQ ANN algorithm wrapper.
+    """
+    num_clusters = 200
+    M = 8 # Number of PQ subspaces
+    
+    ivf_lists, cluster_centers, codebooks, encoded_data = ivfpq_index_raw_kernerls(N, D, A, num_clusters, M)
+    top_k_indices = search_ivfpq_raw_kernels(X, ivf_lists, cluster_centers, codebooks, encoded_data, A, K, num_probe=40, M=M, D=D)
+    
+    return top_k_indices
+
 # ------------------------------------------------------------------------------------------------
 # Wrapping for test
+@time_log
+def our_knn(N, D, A, X, K):
+    global KNN_IMPLEMENTATIONS
+    
+    if KNN_IMPLEMENTATIONS == "raw_kernerls":
+        # top_k_indices = our_knn_nearest_batch(N, D, A, X, K, batch_size=100000, distance_metric="l2", use_kernel=True)
+        top_k_indices = our_knn_cupy_basic(N, D, A, X, K, distance_metric="l2", use_kernel = True)
+    elif KNN_IMPLEMENTATIONS == "cupy_basic":    
+        top_k_indices = our_knn_cupy_basic(N, D, A, X, K, distance_metric="l2", use_kernel = False)
+    elif KNN_IMPLEMENTATIONS == "numpy":
+        top_k_indices = our_knn_np(N, D, A, X, K, distance_metric="l2")
+
+    return top_k_indices
+
+@time_log
 def our_kmeans(N, D, A, K):
     global KMEANS_IMPLEMENTATIONS
     
@@ -598,124 +1125,18 @@ def our_kmeans(N, D, A, K):
         labels, centorids = dbscan(A, 0.5, 5)
     return labels
 
-# ------------------------------------------------------------------------------------------------
-# Your Task 2.2 code here
-# ------------------------------------------------------------------------------------------------
 
-# You can create any kernel here
-
-def our_ann_simple(N, D, A, X, K, use_kernel=True):
-    """_ann
-
-    Args:
-        N (int): Number of vectors 
-        D (int): Dimension of vectors
-        A (list[list[float]]): A collection of vectors(N x D)
-        X (list[float]): A specified vector(ie. query vector)
-        K (int): Top K nearest neighbors to find
-        
-    Returns:
-        Result[K]: Top K nearest neighbors ID (index of the vector in A)
-    """
-    
-    n_probe = 3 # the number of clusters searched during a query
-    
-
-    centroids, labels, = our_kmeans(N, D, A, K, use_kernel=use_kernel)
-
-    top_k_indices = []
-    for _ in range(n_probe):    
-        label = cp.argmin(distance_l2(centroids, X, use_kernel=use_kernel))
-        cluster = A[labels == label]
-        top_k_indices = our_knn(cluster.shape[0], D, cluster, X, K, use_kernel=use_kernel)
-    
-    return top_k_indices
-        
-def our_ann_IVFPQ_numpy(N, D, A, X, K, M, n_probe, use_kernel=True):
-    """Approximate Nearest Neighbor search using IVFPQ(Inverted Vectors for Product Quantization)
-        Usually, M is 8
-        The larger n_probe is, the more accurate the search is, but the slower the search is.
-        Currently, distance metric is set to L2 distance, but you can use cosine distance or dot product as well.
-
-    Args:
-        N (int): Number of vectors 
-        D (int): Dimension of vectors
-        A (list[list[float]]): A collection of vectors(N x D)
-        X (list[float]): A specified vector(ie. query vector)
-        K (int): Top K nearest neighbors to find
-        M (int): Number of sub-vectors of PQ subvectors
-        n_probe (int): the number of clusters searched during a query
-        
-    Returns:
-        Result[K]: Top K nearest neighbors ID (index of the vector in A)
-    """
-    dsub = D // M  # Dimensionality of sub-vector
-    ksub = 256  # Number of Clusters for sub-vectors
-    # Step 1: First-Level Clustering (Coarse Quantization - IVF)
-    labels, centroids = our_kmeans(N, D, A, K, use_kernel=use_kernel)
-    
-    # Compute residual vectores (y - q1(y))
-    residuals = A - centroids[labels]
-    
-    # Step 2: Product Quantization(Fine Quantization) Training
-    pq_codebooks = np.empty((M, ksub, dsub), dtype=np.float32) # PQ centroids
-    pq_codes = np.empty((N, M), dtype=np.uint8) # Encoded PQ codes
-    
-    for m in range(M):
-        sub_vecs = residuals[:, m * dsub:(m + 1) * dsub] # Extract sub-vectors
-        _, pq_codebooks[m] = our_kmeans(N, dsub, sub_vecs, ksub, use_kernel=use_kernel)
-        pq_codes[:, m] = vq(sub_vecs, pq_codebooks[m]) # Assign to PQ centroids
-        
-    # Step 3: Query Processintg
-    # Find the closest 'n_probe' clusters to the query vector
-    closest_clusters = np.argsort(distance_l2(centroids, X, use_kernel=use_kernel))[:n_probe]
-    
-    # Retrieve points in the selected clusters
-    candidates = []
-    for label in closest_clusters:
-        candidates.extend(np.where(labels == label)[0])
-        
-    # If no candidates found, return an empty list
-    if len(candidates) == 0:
-        return []
-    
-    query_coarse_id = closest_clusters[0] # Assign query to closest cluster
-    query_residual = X - centroids[query_coarse_id] # Compute residual vector for query
-    
-    # Step 4 : Compute PQ Distance Table
-    query_pq = np.empty((M,), dtype=np.uint8)
-    dist_table = np.empty((M, ksub), dtype=np.float32)
-    
-    for m in range(M):
-        query_sub = query_residual[m * dsub:(m + 1) * dsub] # Extract query sub-vector
-        dist_table[m, :] = distance_l2(pq_codebooks[m], query_sub, use_kernel=use_kernel)
-        query_pq[m] = np.argmin(dist_table[m]) # Assign PQ code for query
-        
-    # Step 5: Approximate Nearest Neighbor Search Using our KNN
-    distances = []
-    for idx in candidates:
-        pq_code = pq_codes[idx]
-
-        # Compute final IVFPQ distance
-        # d = || x - y_C - y_R ||²
-        coarse_distance = np.sum((X - centroids[labels[idx]])**2)  # || x - q1(y) ||². q1(y) = y_C
-        refined_distance = np.sum(dist_table[np.arange(M), pq_code])    # Lookup table sum for q2(y - q1(y)), q2(y - q1(y)) = y_R.
-                                                                        # refined_distance is equivalent to || y_R ||² because dist_table is already squared.
-
-        total_distance = coarse_distance + refined_distance
-        distances.append((idx, total_distance))
-
-    # Sort by distance and return top-K indices
-    distances.sort(key=lambda x: x[1])
-    return [idx for idx, _ in distances[:K]]
-
+@time_log
 def our_ann(N, D, A, X, K):
     global ANN_IMPLEMENTATIONS
+
+    if ANN_IMPLEMENTATIONS == "numpy":
+        top_k_indices = our_ann_numpy(N, D, A, X, K)
+    elif ANN_IMPLEMENTATIONS == "cupy_basic":
+        top_k_indices = our_ann_cupy_basic(N, D, A, X, K)
+    elif ANN_IMPLEMENTATIONS == "raw_kernerls":
+        top_k_indices = our_ann_raw_kernerls(N, D, A, X, K)
     
-    if ANN_IMPLEMENTATIONS == "simple":
-        top_k_indices = our_ann_simple(N, D, A, X, K, use_kernel=True)
-    elif ANN_IMPLEMENTATIONS == "IVFPQ_numpy":
-        top_k_indices = our_ann_IVFPQ_numpy(N, D, A, X, K, M=8, n_probe=3, use_kernel=True)
     return top_k_indices
 
 
@@ -851,24 +1272,45 @@ def test_kmeans():
     # print(kmeans_result)
     
 
-def test_knn():
-    N, D, A, X, K = testdata_knn("test_file.json")
-    knn_result = our_knn(N, D, A, X, K)
-    print(knn_result)
+def test_knn_numpy():
+    N, D, A, X, K = testdata_knn("")
+
+    A = np.asarray(A)
+    X = np.asarray(X)
+    
+    # Run the our_ann function
+    top_k_indices_np = our_knn_np(N, D, A, X, K)
+    
+    top_k_indices_np = cp.asnumpy(top_k_indices_np)
+    
+    # Check the length of the result
+    assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
+    
+    # Check if the indices are within the valid range
+    assert np.all(top_k_indices_np < N), "Some indices are out of range"
+    
+    print("top_k_indices_np.shape:", top_k_indices_np.shape)
+    print("top_k_indices_np:", top_k_indices_np)
+    
+    print("Test passed!")
+
+    return top_k_indices_np
+    
+
     
 def test_our_ann():
     # Generate test data
     N, D, A, X, K = testdata_ann("")
     
     # Convert data to CuPy arrays
-    A_cp = cp.asarray(A)
-    X_cp = cp.asarray(X)
+    A_cp = np.asarray(A)
+    X_cp = np.asarray(X)
     
     # Run the our_ann function
-    top_k_indices = our_ann(N, D, A_cp, X_cp, K)
+    top_k_indices_np = our_ann(N, D, A_cp, X_cp, K)
     
     # Convert the result back to NumPy for assertion
-    top_k_indices_np = cp.asnumpy(top_k_indices)
+    top_k_indices_np = cp.asnumpy(top_k_indices_np)
     
     # Check the length of the result
     assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
@@ -881,19 +1323,20 @@ def test_our_ann():
     
     print("Test passed!")
     
+
+
 def test_our_ann_IVFPQ_numpy():
     # Generate test data
     N, D, A, X, K, = testdata_ann("")
     
-    # Convert data to CuPy arrays
-    A_cp = np.asarray(A)
-    X_cp = np.asarray(X)
+    A = np.asarray(A)
+    X = np.asarray(X)
+    
     
     # Run the our_ann_IVFPQ function
-    top_k_indices = our_ann(N, D, A_cp, X_cp, K)
-    
-    # Convert the result back to NumPy for assertion
-    top_k_indices_np = np.asnumpy(top_k_indices)
+    top_k_indices_np = our_ann(N, D, A, X, K)
+
+    top_k_indices_np = cp.asnumpy(top_k_indices_np)
     
     # Check the length of the result
     assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
@@ -905,6 +1348,7 @@ def test_our_ann_IVFPQ_numpy():
     print("top_k_indices_np:", top_k_indices_np)
     
     print("Test passed!")
+    return top_k_indices_np
     
 def test_our_ann_IVFPQ_cupy_basic():
     # Generate test data
@@ -915,11 +1359,11 @@ def test_our_ann_IVFPQ_cupy_basic():
     X_cp = cp.asarray(X)
     
     # Run the our_ann_IVFPQ function
-    top_k_indices = our_ann_IVFPQ(N, D, A_cp, X_cp, K, M, n_probe)
+    top_k_indices = our_ann(N, D, A_cp, X_cp, K)
     
     # Convert the result back to NumPy for assertion
     top_k_indices_np = cp.asnumpy(top_k_indices)
-    
+    print("top_k_indices_np:", top_k_indices_np)
     # Check the length of the result
     assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
     
@@ -930,21 +1374,124 @@ def test_our_ann_IVFPQ_cupy_basic():
     print("top_k_indices_np:", top_k_indices_np)
     
     print("Test passed!")
+    return top_k_indices_np
+
+def test_recall_rate_numpy():
+    # Generate test data
+    N, D, A, X, K = testdata_ann("")
     
-def recall_rate(list1, list2):
+    A_cp = np.asarray(A)
+    X_cp = np.asarray(X)
+    
+    # Ensure inputs are normalized
+    A = A / np.linalg.norm(A, axis=1, keepdims=True)  # Normalize database
+    X = X / np.linalg.norm(X)  # Normalize query
+    
+    # Run the KNN algorithm
+    knn_result_np = our_knn(N, D, A_cp, X_cp, K)
+    
+    
+    # Run the ANN algorithm
+    ann_result_np = our_ann(N, D, A_cp, X_cp, K)
+
+
+    
+    # Calculate recall rate
+    recall = recall_rate(knn_result_np, ann_result_np, K)
+
+    
+    print(f"Recall rate: {recall:.2f}")
+    
+def test_recall_rate_cupy_basic():
+    # Generate test data
+    N, D, A, X, K = testdata_ann("")
+    
+    # Convert data to CuPy arrays
+    A = cp.asarray(A, dtype=cp.float32)
+    X = cp.asarray(X, dtype=cp.float32)
+    
+    # Ensure inputs are normalized
+    A = A / cp.linalg.norm(A, axis=1, keepdims=True)  # Normalize database
+    X = X / cp.linalg.norm(X)  # Normalize query
+    
+    
+    # Run the KNN algorithm
+    knn_result = our_knn(N, D, A, X, K)
+    knn_result_np = knn_result.get()
+    
+
+    # Run the ANN algorithm
+    ann_result = our_ann(N, D, A, X, K)
+    ann_result_np = ann_result
+    
+    # Calculate recall rate
+    recall = recall_rate(knn_result_np, ann_result_np, K)
+
+    
+    print(f"Recall rate: {recall:.2f}")
+    
+def test_recall_rate_raw_kernerls():
+    # Generate test data
+    N, D, A, X, K = testdata_ann("")
+    
+    # Convert data to CuPy arrays
+    A = cp.asarray(A, dtype=cp.float32)
+    X = cp.asarray(X, dtype=cp.float32)
+    
+    # Ensure inputs are normalized
+    A = A / cp.linalg.norm(A, axis=1, keepdims=True)  # Normalize database
+    X = X / cp.linalg.norm(X)  # Normalize query
+    
+    # Run the KNN algorithm
+    knn_result = our_knn(N, D, A, X, K)
+    knn_result_np = knn_result.get()
+    
+
+    # Run the ANN algorithm
+    ann_result = our_ann(N, D, A, X, K)
+    ann_result_np = ann_result
+    
+
+
+    # Calculate recall rate
+    recall = recall_rate(knn_result_np, ann_result_np, K)
+
+    
+    print(f"Recall rate: {recall:.2f}")
+    
+    
+def recall_rate(knn_result, ann_result, K):
     """
     Calculate the recall rate of two lists
-    list1[K]: The top K nearest vectors ID
-    list2[K]: The top K nearest vectors ID
+    knn_result[K]: The top K nearest vectors ID from KNN
+    ann_result[K]: The top K nearest vectors ID from ANN
+    
+    Returns:
+    float: Recall rate
     """
-    return len(set(list1) & set(list2)) / len(list1)
+    return len(set(knn_result) & set(ann_result)) / K
+
 
 if __name__ == "__main__":
     ### Test Ann
     # KMEANS_IMPLEMENTATION = "numpy" # or "raw_kernels", "cupy_basic", "numpy", or, "dbscan"
-    ANN_IMPLEMENTATIONS = "IVFPQ_numpy" # "simple", "IVFPQ_numpy", or "IVFPQ_cupy_basic"
-    test_our_ann_IVFPQ_numpy()
     
+    
+    # for _ in range(10):
+    #     ANN_IMPLEMENTATIONS = "numpy"  
+    #     KNN_IMPLEMENTATIONS = "numpy" 
+    #     test_recall_rate_numpy()
+    # for _ in range(10):
+    #     ANN_IMPLEMENTATIONS = "cupy_basic"  
+    #     KNN_IMPLEMENTATIONS = "cupy_basic" 
+    #     test_recall_rate_cupy_basic()
+    for _ in range(10):
+        KNN_IMPLEMENTATIONS = "raw_kernerls"
+        ANN_IMPLEMENTATIONS = "raw_kernerls"
+        test_recall_rate_raw_kernerls()
+        
+    # test_recall_rate_sim_cupy()
+    # test_knn_numpy()
     
     
     
@@ -1039,18 +1586,18 @@ if __name__ == "__main__":
     
     ### Test KNN
 
-    # Set parameters
-    N, D, K = 4000000, 2, 10
+    # # Set parameters
+    # N, D, K = 4000000, 2, 10
 
-    # Generate random dataset
-    A_gpu = cp.random.randn(N, D).astype(cp.float32)  # GPU array
-    X_gpu = cp.random.randn(D).astype(cp.float32)
+    # # Generate random dataset
+    # A_gpu = cp.random.randn(N, D).astype(cp.float32)  # GPU array
+    # X_gpu = cp.random.randn(D).astype(cp.float32)
 
-    # Test with 4M vectors
-    for metric in ["l2", "cosine", "dot", "manhattan"]:
-        print("running")
-        top_k_indices = our_knn_nearest_batch(N, D, A_gpu, X_gpu, K, distance_metric=metric, use_kernel=True)
-        print(f"Top {K} nearest neighbors using {metric} distance:", cp.asnumpy(top_k_indices))
+    # # Test with 4M vectors
+    # for metric in ["l2", "cosine", "dot", "manhattan"]:
+    #     print("running")
+    #     top_k_indices = our_knn_nearest_batch(N, D, A_gpu, X_gpu, K, distance_metric=metric, use_kernel=True)
+    #     print(f"Top {K} nearest neighbors using {metric} distance:", cp.asnumpy(top_k_indices))
 
     # # Convert to NumPy for CPU testing
     # A_cpu = cp.asnumpy(A_gpu)
@@ -1087,4 +1634,3 @@ if __name__ == "__main__":
 
     ### Test KMeans
     
-
