@@ -30,7 +30,7 @@ echo "Waiting for server to start on port 8000..."
 MAX_TRIES=40
 TRIES=0
 
-until curl -s http://localhost:8000/rag > /dev/null; do
+until curl -s http://localhost:8000/ping > /dev/null; do
   sleep 0.5
   TRIES=$((TRIES + 1))
   if [ $TRIES -ge $MAX_TRIES ]; then

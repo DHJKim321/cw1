@@ -6,13 +6,15 @@ from modules.args_extractor import get_args
 import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 import modules.question_loader
+import random
+random.seed(42)
 
 URL = "http://127.0.0.1:8000/rag"
 
 def get_payloads(total_requests, k):
     payloads = []
     for i in range(total_requests):
-        question = questions[i % len(questions)]
+        question = random.choice(questions)
         payload = {
             "query": question,
             "k": k,
@@ -23,7 +25,6 @@ def get_payloads(total_requests, k):
 def send_request(payload):
     start_time = time.time()
     try:
-        print(f"Sending request to {URL} with payload: {payload}")
         response = requests.post(URL, json=payload)
         end_time = time.time()
         latency = round(end_time - start_time, 3)
