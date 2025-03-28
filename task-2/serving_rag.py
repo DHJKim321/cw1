@@ -24,6 +24,10 @@ MAX_BATCH_SIZE = args.batch_size
 MAX_WAITING_TIME = args.max_waiting_time
 use_queue_batching = args.use_queue_batching
 
+class QueryRequest(BaseModel):
+    query: str
+    k: int = 2
+
 # Device selection
 if torch.backends.mps.is_available():
     device = torch.device("mps")
@@ -35,13 +39,6 @@ else:
 # Initialize FastAPI
 app = FastAPI()
 request_queue = queue.Queue()
-
-# Example documents in memory
-# documents = [
-#     "Cats are small furry carnivores that are often kept as pets.",
-#     "Dogs are domesticated mammals, not natural wild animals.",
-#     "Hummingbirds can hover in mid-air by rapidly flapping their wings."
-# ]
 
 # Load data
 def clean_text(text):
@@ -59,7 +56,6 @@ documents = load_context(DATA_PATH)
 # 1. Load embedding model
 EMBED_MODEL_NAME = "intfloat/multilingual-e5-large-instruct"
 embed_tokenizer = AutoTokenizer.from_pretrained(EMBED_MODEL_NAME)
-embed_model = AutoModel.from_pretrained(EMBED_MODEL_NAME)
 embed_model = AutoModel.from_pretrained(EMBED_MODEL_NAME).to(device)
 
 # Basic Chat LLM
@@ -78,20 +74,15 @@ chat_pipeline = pipeline("text-generation", model="Qwen/Qwen2.5-1.5B-Instruct")
 # chat_pipeline = pipeline("text-generation", model=chat_model, tokenizer=chat_tokenizer)
 # #------------------Cluster END--------------------
 
-## Hints:
-
-### Step 3.1:
-# 1. Initialize a request queue
-# 2. Initialize a background thread to process the request (via calling the rag_pipeline function)
-# 3. Modify the predict function to put the request in the queue, instead of processing it immediately
-
-### Step 3.2:
-# 1. Take up to MAX_BATCH_SIZE requests from the queue or wait until MAX_WAITING_TIME
-# 2. Process the batched requests
-
 def get_embedding(text: str) -> np.ndarray:
     """Compute a simple average-pool embedding."""
     inputs = embed_tokenizer(text, return_tensors="pt", truncation=True).to(device)
+    with torch.no_grad():
+        outputs = embed_model(**inputs)
+    return outputs.last_hidden_state.mean(dim=1).cpu().numpy()
+
+def get_embedding_batch(texts: list[str]) -> np.ndarray:
+    inputs = embed_tokenizer(texts, return_tensors="pt", truncation=True).to(device)
     with torch.no_grad():
         outputs = embed_model(**inputs)
     return outputs.last_hidden_state.mean(dim=1).cpu().numpy()
@@ -115,7 +106,8 @@ def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
     top_k_indices = np.argsort(sims.ravel())[::-1][:k]
     return [documents[i] for i in top_k_indices]
 
-def rag_pipeline(query: str, k: int = 2) -> str:
+def rag_pipeline(query: str, k: int) -> str:
+    start = time.time()
     query_emb = get_embedding(query)
     retrieved_docs = retrieve_top_k(query_emb, k)
 
@@ -123,20 +115,52 @@ def rag_pipeline(query: str, k: int = 2) -> str:
     prompt = f"Question: {query}\n\nContext:\n{context}\n\nAnswer:\n"
 
     generated_text = chat_pipeline(prompt, max_new_tokens=50, do_sample=True)[0]["generated_text"]
-
+    print(f"[RAG] Total processing time: {time.time() - start:.2f}s")
+    print(f"[RAG] Generated text: {generated_text}")
     answer_start = generated_text.find("Answer:")
     if answer_start != -1:
-        generated_text = generated_text[answer_start + len("Answer:"):].strip()
-
+        generated_text = generated_text[answer_start + len("Answer:"):].strip() + "..."
     return generated_text
 
+def rag_pipeline_batch(queries: list[str], k: int) -> list[str]:
+    start = time.time()
 
-# Define request model
-class QueryRequest(BaseModel):
-    query: str
-    k: int = 2
+    # Step 1: Embed all queries as a batch
+    query_embs = get_embedding_batch(queries)
 
-def process_requests():
+    # Step 2: Retrieve top-k docs per query
+    retrieved_docs = [retrieve_top_k(query_emb, k) for query_emb in query_embs]
+    contexts = ["\n".join(docs) for docs in retrieved_docs]
+
+    # Step 3: Create prompts
+    prompts = [
+        f"Question: {query}\n\nContext:\n{context}\n\nAnswer:\n"
+        for query, context in zip(queries, contexts)
+    ]
+
+    # Step 4: Try batched generation, fallback to loop if needed
+    try:
+        raw_outputs = chat_pipeline(prompts, max_new_tokens=50, do_sample=True)
+    except Exception as e:
+        print(f"[RAG] Batch generation failed, falling back to sequential. Error: {e}")
+        raw_outputs = [
+            chat_pipeline(prompt, max_new_tokens=50, do_sample=True)[0]
+            for prompt in prompts
+        ]
+
+    # Step 5: Parse answers from raw_outputs
+    answers = []
+    for output in raw_outputs:
+        text = output[0]["generated_text"]
+        answer_start = text.find("Answer:")
+        if answer_start != -1:
+            text = text[answer_start + len("Answer:"):].strip()
+        answers.append(text + "...")
+
+    print(f"[RAG] Total processing time for batch: {time.time() - start:.2f}s")
+    return answers
+
+def process_requests_batch():
     while True:
         batch = []
         start_time = time.time()
@@ -148,23 +172,37 @@ def process_requests():
                 break
 
         if batch:
-            results = [(request['payload'], request['future'], rag_pipeline(request['payload'].query, request['payload'].k)) for request in batch]
-            for req, fut, result in results:
-                fut.set_result(result)
+            queries = [req['payload'].query for req in batch]
+            ks = [req['payload'].k for req in batch]
+            futures = [req['future'] for req in batch]
+
+            results = rag_pipeline_batch(queries, ks[0])  
+
+            for future, result in zip(futures, results):
+                future.set_result(result)
 
 # Start the background thread
-threading.Thread(target=process_requests, daemon=True).start()
+if use_queue_batching:
+    print("[RAG] Starting background thread for request processing...")
+    threading.Thread(target=process_requests_batch, daemon=True).start()
+else:
+    print("[RAG] Background thread for request processing is disabled.")
 
 async def wait_for_future(future: Future):
     future.result()  # This will complete in the background
 
 @app.post("/rag")
 def predict(payload: QueryRequest, background_tasks: BackgroundTasks):
-    future = Future()
-    request_queue.put({"payload": payload, "future": future})
-    background_tasks.add_task(wait_for_future, future)  # Non-blocking response
-    return {"query": payload.query, "result": future.result()}
+    if use_queue_batching:
+        future = Future()
+        request_queue.put({"payload": payload, "future": future})
+        background_tasks.add_task(wait_for_future, future)  # non-blocking
+        return {"query": payload.query, "result": future.result()}
+    else:
+        result = rag_pipeline(payload.query, payload.k)
+        return {"query": payload.query, "result": result}
+
 
 if __name__ == "__main__":
-    print("Starting RAG service...")
+    print("[RAG] Starting RAG service...")
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -5,35 +5,42 @@ import numpy as np
 from modules.args_extractor import get_args
 import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+import modules.question_loader
 
 URL = "http://127.0.0.1:8000/rag"
 
 def send_request(payload):
     start_time = time.time()
     try:
-        response = requests.post(URL, json=payload, timeout=10)
+        print(f"Sending request to {URL} with payload: {payload}")
+        response = requests.post(URL, json=payload)
         end_time = time.time()
         latency = round(end_time - start_time, 3)
-        return response.status_code, latency
-    except requests.exceptions.RequestException:
-        return 0, None
+        return response.json().get("result"), response.status_code, latency
+    except Exception as e:
+        print(f"Unexpected error in send_request: {e}")
+        return None, 0, None
 
-def run_load_test(users=10, num_requests=50):
+def run_load_test(users, num_requests):
     print(f"Starting load test with {users} users and {num_requests} requests each.")
 
+    answers = []
     latencies = []
     errors = 0
 
     start_overall = time.time()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=users) as executor:
-        futures = [executor.submit(send_request, payload) for _ in range(num_requests)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=None) as executor:
+        futures = [executor.submit(send_request, payload) for _ in range(users * num_requests)]
 
         for future in concurrent.futures.as_completed(futures):
-            status, latency = future.result()
+            response, status, latency = future.result()
             if status != 200 or latency is None:
                 errors += 1
+                print(f"Request failed with status code: {status}")
             else:
+                print(f"Request succeeded")
                 latencies.append(latency)
+                answers.append(response)
 
     end_overall = time.time()
     test_duration = end_overall - start_overall
@@ -52,10 +59,11 @@ def run_load_test(users=10, num_requests=50):
     else:
         print("No successful responses.")
 
+    print("\n--- Total Answers ---")
+    for i, answer in enumerate(answers):
+        print(f"Answer {i+1}: {answer}")
+
 if __name__ == "__main__":
-    print("Starting load tester...")
-    payload = {"query": "Tell me about a movie with time travel", "k": 3}
-    print(f"Sample payload: {payload}")
     args = get_args()
     if args.use_queue_batching:
         print("Using batching to process requests")
@@ -65,4 +73,13 @@ if __name__ == "__main__":
         print("Using a load balancer to distribute requests")
     num_requests = args.num_requests
     num_users = args.num_users
+    top_k = args.top_k
+
+    # print("Loading test questions...")
+    # question_loader = modules.question_loader.QuestionLoader()
+    # questions = question_loader.load_questions()
+    # print(f"Loaded {len(questions)} questions.")
+    print("Starting load tester...")
+    payload = {"query": "Tell me about a movie with time travel", "k": top_k}
+    print(f"Sample payload: {payload}")
     run_load_test(users=num_users, num_requests=num_requests)

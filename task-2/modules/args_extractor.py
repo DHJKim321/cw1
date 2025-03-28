@@ -11,4 +11,5 @@ def get_args():
     parser.add_argument("--use_load_balancer", action="store_true", help="Use a load balancer to distribute requests")
     parser.add_argument("--num_requests", type=int, default=50, help="Number of requests to process")
     parser.add_argument("--num_users", type=int, default=5, help="Number of concurrent users")
+    parser.add_argument("--top_k", type=int, default=2, help="Number of context documents to retrieve")
     return parser.parse_args()
