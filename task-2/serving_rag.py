@@ -54,7 +54,7 @@ documents = load_context(DATA_PATH)
 #------------------Local START--------------------
 # 1. Load embedding model
 EMBED_MODEL_NAME = "intfloat/multilingual-e5-large-instruct"
-embed_tokenizer = AutoTokenizer.from_pretrained(EMBED_MODEL_NAME).to(device)
+embed_tokenizer = AutoTokenizer.from_pretrained(EMBED_MODEL_NAME)
 embed_model = AutoModel.from_pretrained(EMBED_MODEL_NAME).to(device)
 
 # Basic Chat LLM
@@ -64,11 +64,11 @@ chat_pipeline = pipeline("text-generation", model="Qwen/Qwen2.5-1.5B-Instruct")
 # #------------------Cluster START------------------
 # # 1. Load embedding model
 # LOCAL_MODEL_PATH = "/home/s1808795/.cache/huggingface/hub/models--intfloat--multilingual-e5-large-instruct/snapshots/84344a23ee1820ac951bc365f1e91d094a911763"
-# embed_tokenizer = AutoTokenizer.from_pretrained(LOCAL_MODEL_PATH, local_files_only=True).to(device)
+# embed_tokenizer = AutoTokenizer.from_pretrained(LOCAL_MODEL_PATH, local_files_only=True)
 # embed_model = AutoModel.from_pretrained(LOCAL_MODEL_PATH, local_files_only=True).to(device)
 # # Basic Chat LLM
 # LOCAL_CHAT_MODEL_PATH = "/home/s1808795/.cache/huggingface/hub/models--facebook--opt-125m/snapshots/27dcfa74d334bc871f3234de431e71c6eeba5dd6"
-# chat_tokenizer = AutoTokenizer.from_pretrained(LOCAL_CHAT_MODEL_PATH, local_files_only=True).to(device)
+# chat_tokenizer = AutoTokenizer.from_pretrained(LOCAL_CHAT_MODEL_PATH, local_files_only=True)
 # chat_model = AutoModelForCausalLM.from_pretrained(LOCAL_CHAT_MODEL_PATH, local_files_only=True).to(device)
 # chat_pipeline = pipeline("text-generation", model=chat_model, tokenizer=chat_tokenizer).to(device)
 # #------------------Cluster END--------------------
