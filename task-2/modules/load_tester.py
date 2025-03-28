@@ -9,6 +9,17 @@ import modules.question_loader
 
 URL = "http://127.0.0.1:8000/rag"
 
+def get_payloads(total_requests, k):
+    payloads = []
+    for i in range(total_requests):
+        question = questions[i % len(questions)]
+        payload = {
+            "query": question,
+            "k": k,
+        }
+        payloads.append(payload)
+    return payloads
+
 def send_request(payload):
     start_time = time.time()
     try:
@@ -21,7 +32,7 @@ def send_request(payload):
         print(f"Unexpected error in send_request: {e}")
         return None, 0, None
 
-def run_load_test(users, num_requests):
+def run_load_test(users, num_requests, payloads):
     print(f"Starting load test with {users} users and {num_requests} requests each.")
 
     answers = []
@@ -30,7 +41,7 @@ def run_load_test(users, num_requests):
 
     start_overall = time.time()
     with concurrent.futures.ThreadPoolExecutor(max_workers=None) as executor:
-        futures = [executor.submit(send_request, payload) for _ in range(users * num_requests)]
+        futures = [executor.submit(send_request, payload) for _, payload in zip(range(users * num_requests), payloads)]
 
         for future in concurrent.futures.as_completed(futures):
             response, status, latency = future.result()
@@ -61,9 +72,10 @@ def run_load_test(users, num_requests):
 
     print("\n--- Total Answers ---")
     for i, answer in enumerate(answers):
-        print(f"Answer {i+1}: {answer}")
+        print(f"Answer {i+1}: {answer}\n")
 
 if __name__ == "__main__":
+    print("Starting load tester...")
     args = get_args()
     if args.use_queue_batching:
         print("Using batching to process requests")
@@ -75,11 +87,14 @@ if __name__ == "__main__":
     num_users = args.num_users
     top_k = args.top_k
 
-    # print("Loading test questions...")
-    # question_loader = modules.question_loader.QuestionLoader()
-    # questions = question_loader.load_questions()
-    # print(f"Loaded {len(questions)} questions.")
-    print("Starting load tester...")
-    payload = {"query": "Tell me about a movie with time travel", "k": top_k}
-    print(f"Sample payload: {payload}")
-    run_load_test(users=num_users, num_requests=num_requests)
+    print("Loading test questions...")
+    question_loader = modules.question_loader.QuestionLoader()
+    questions = question_loader.load_questions()
+    print(f"Loaded {len(questions)} questions.")
+
+    print("Generating payloads...")
+    payloads = get_payloads(num_requests * num_users, top_k)
+    print(f"Generated {len(payloads)} payloads.")
+
+    run_load_test(num_users, num_requests, payloads)
+    print("Load test completed.")

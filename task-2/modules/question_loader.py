@@ -1,7 +1,7 @@
 from datasets import load_dataset
 
-DATASET = "facebook/wiki_movies"
-NAME = "movie"
+DATASET = "wiki_movies"
+NAME = "default"
 
 class QuestionLoader:
     def __init__(self):
@@ -22,6 +22,6 @@ class QuestionLoader:
         Returns:
             list: A list of questions loaded from the dataset.
         """
-        self.dataset = load_dataset(self.dataset_name, self.name, split="test")
+        self.dataset = load_dataset(self.dataset_name, self.name, split="test", trust_remote_code=True)
         questions = [item['question'] for item in self.dataset]
         return questions
