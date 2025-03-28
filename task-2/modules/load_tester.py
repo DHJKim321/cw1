@@ -70,9 +70,9 @@ def run_load_test(users, num_requests, payloads):
     else:
         print("No successful responses.")
 
-    print("\n--- Total Answers ---")
-    for i, answer in enumerate(answers):
-        print(f"Answer {i+1}: {answer}\n")
+    # print("\n--- Total Answers ---")
+    # for i, answer in enumerate(answers):
+    #     print(f"Answer {i+1}: {answer}\n")
 
 if __name__ == "__main__":
     print("Starting load tester...")

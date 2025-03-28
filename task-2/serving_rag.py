@@ -73,6 +73,7 @@ chat_pipeline = pipeline("text-generation", model="Qwen/Qwen2.5-1.5B-Instruct")
 # chat_pipeline = pipeline("text-generation", model=chat_model, tokenizer=chat_tokenizer).to(device)
 # #------------------Cluster END--------------------
 
+@torch.no_grad()
 def get_embedding(text: str) -> np.ndarray:
     """Compute a simple average-pool embedding."""
     inputs = embed_tokenizer(text, return_tensors="pt", truncation=True).to(device)
@@ -80,6 +81,7 @@ def get_embedding(text: str) -> np.ndarray:
         outputs = embed_model(**inputs)
     return outputs.last_hidden_state.mean(dim=1).cpu().numpy()
 
+@torch.no_grad()
 def get_embedding_batch(texts: list[str]) -> np.ndarray:
     inputs = embed_tokenizer(texts, return_tensors="pt", truncation=True, padding=True).to(device)
     with torch.no_grad():
