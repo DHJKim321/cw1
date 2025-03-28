@@ -50,7 +50,6 @@ def run_load_test(users, num_requests, payloads):
                 errors += 1
                 print(f"Request failed with status code: {status}")
             else:
-                print(f"Request succeeded")
                 latencies.append(latency)
                 answers.append(response)
 
@@ -59,7 +58,7 @@ def run_load_test(users, num_requests, payloads):
 
     if latencies:
         latencies_np = np.array(latencies)
-        print("\n--- Load Test Results ---")
+        print(f"\n--- Load Test Results @ {time.strftime('%X')} ---")
         print(f"Total Requests: {num_requests*users}")
         print(f"Total Errors: {errors} ({(errors/(num_requests*users))*100:.2f}%)")
         print(f"Total Duration: {test_duration:.2f}s")
