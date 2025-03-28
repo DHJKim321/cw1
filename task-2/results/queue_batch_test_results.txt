@@ -1,0 +1,19 @@
+--- Load Test Results @ 12:47:27 --- Without request queue and batching
+Total Requests: 100
+Total Errors: 0 (0.00%)
+Total Duration: 74.82s
+Throughput: 1.34 requests/sec
+Average Latency: 13.580s
+Median Latency: 15.052s
+95th Percentile Latency: 15.455s
+Max Latency: 15.483s
+
+--- Load Test Results @ 12:48:28 --- With request queue and batching
+Total Requests: 100
+Total Errors: 0 (0.00%)
+Total Duration: 15.06s
+Throughput: 6.64 requests/sec
+Average Latency: 2.467s
+Median Latency: 2.236s
+95th Percentile Latency: 3.222s
+Max Latency: 4.865s
