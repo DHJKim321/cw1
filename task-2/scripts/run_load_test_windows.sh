@@ -6,9 +6,11 @@ NUM_USERS=10
 NUM_REQUESTS=10
 TOP_K=2
 USE_QUEUE_BATCHING=True
+REQUEST_TYPE=gradual
+TOTAL_TIME=30
 
 echo "Arguments:"
-for var in BATCH_SIZE MAX_WAITING_TIME NUM_USERS NUM_REQUESTS TOP_K USE_QUEUE_BATCHING; do
+for var in BATCH_SIZE MAX_WAITING_TIME NUM_USERS NUM_REQUESTS TOP_K USE_QUEUE_BATCHING REQUEST_TYPE TOTAL_TIME; do
   printf "  %s = %s\n" "$var" "${!var}"
 done
 
@@ -42,4 +44,4 @@ done
 echo "Server is up!"
 
 # === Run load test ===
-python -m modules.load_tester --num_users $NUM_USERS --num_requests $NUM_REQUESTS --top_k $TOP_K
+python -m modules.load_tester --num_users $NUM_USERS --num_requests $NUM_REQUESTS --top_k $TOP_K --request_type $REQUEST_TYPE --total_time $TOTAL_TIME

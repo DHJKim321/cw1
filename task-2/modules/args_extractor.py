@@ -20,4 +20,6 @@ def get_args():
     parser.add_argument("--num_requests", type=int, default=50, help="Number of requests to process")
     parser.add_argument("--num_users", type=int, default=5, help="Number of concurrent users")
     parser.add_argument("--top_k", type=int, default=2, help="Number of context documents to retrieve")
+    parser.add_argument("--request_type", type=str, choices=["instant", "gradual"], help="Type of incoming request. Instant sends num_requests * num_users requests at once while Gradual sends num_requests * num_users requests in total_time seconds")
+    parser.add_argument("--total_time", type=int, default=60, help="Total time in seconds to send requests for gradual request type")
     return parser.parse_args()
