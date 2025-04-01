@@ -52,8 +52,10 @@ def print_save_results(users, num_requests, latencies, errors, duration):
         log(f"Max Latency: {latencies_np.max():.3f}s")
 
         log("Saving results...")
-        
-        file_name = f"results/load_test_results_use_batching={args.use_queue_batching}_batch_size={args.batch_size}_total_requests={num_requests * num_users}_k={args.top_k}_request_type={args.request_type}.txt"
+        output_dir = args.output_dir + "/" if args.output_dir != "" else ""
+        if not os.path.exists("results/" + output_dir):
+            os.makedirs("results/" + output_dir)
+        file_name = f"results/{output_dir}load_test_results_use_batching={args.use_queue_batching}_batch_size={args.batch_size}_total_requests={num_requests * num_users}_k={args.top_k}_request_type={args.request_type}.txt"
         with open(file_name, "a") as f:
             f.write(f"Latencies: {latencies}\n")
             f.write(f"Total Requests: {total_requests}\n")

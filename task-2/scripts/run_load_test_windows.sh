@@ -54,4 +54,5 @@ python -m modules.load_tester \
   --top_k $TOP_K \
   --request_type $REQUEST_TYPE \
   --total_time $TOTAL_TIME \
+  --batch_size $BATCH_SIZE \
   $( [ "$VERBOSE" = "True" ] && echo "--verbose" )
