@@ -8,13 +8,13 @@ TOP_K=2
 USE_QUEUE_BATCHING=True
 REQUEST_TYPE=gradual
 TOTAL_TIME=30
+VERBOSE=False
 
 echo "Arguments:"
-for var in BATCH_SIZE MAX_WAITING_TIME NUM_USERS NUM_REQUESTS TOP_K USE_QUEUE_BATCHING REQUEST_TYPE TOTAL_TIME; do
+for var in BATCH_SIZE MAX_WAITING_TIME NUM_USERS NUM_REQUESTS TOP_K USE_QUEUE_BATCHING REQUEST_TYPE TOTAL_TIME VERBOSE; do
   printf "  %s = %s\n" "$var" "${!var}"
 done
 
-# === Cleanup function on exit or interruption ===
 cleanup() {
   echo ""
   echo "[Cleanup] Killing server with PID $SERVER_PID"
@@ -23,11 +23,14 @@ cleanup() {
 }
 trap cleanup SIGINT SIGTERM EXIT
 
-# === Start server ===
-python serving_rag.py --use_queue_batching $USE_QUEUE_BATCHING --batch_size $BATCH_SIZE --max_waiting_time $MAX_WAITING_TIME &
+python serving_rag.py \
+  --use_queue_batching $USE_QUEUE_BATCHING \
+  --batch_size $BATCH_SIZE \
+  --max_waiting_time $MAX_WAITING_TIME \
+  $( [ "$VERBOSE" = "True" ] && echo "--verbose" ) &
+
 SERVER_PID=$!
 
-# === Wait for server to start ===
 echo "Waiting for server to start on port 8000..."
 MAX_TRIES=40
 TRIES=0
@@ -43,5 +46,12 @@ done
 
 echo "Server is up!"
 
-# === Run load test ===
-python -m modules.load_tester --num_users $NUM_USERS --num_requests $NUM_REQUESTS --top_k $TOP_K --request_type $REQUEST_TYPE --total_time $TOTAL_TIME
+# === Run the load test ===
+python -m modules.load_tester \
+  --use_queue_batching $USE_QUEUE_BATCHING \
+  --num_users $NUM_USERS \
+  --num_requests $NUM_REQUESTS \
+  --top_k $TOP_K \
+  --request_type $REQUEST_TYPE \
+  --total_time $TOTAL_TIME \
+  $( [ "$VERBOSE" = "True" ] && echo "--verbose" )

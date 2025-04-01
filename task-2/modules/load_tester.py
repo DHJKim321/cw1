@@ -9,6 +9,10 @@ import modules.question_loader
 import random
 random.seed(42)
 
+def log(msg):
+    if args.verbose:
+        print(msg)
+
 URL = "http://127.0.0.1:8000/rag"
 
 def get_payloads(total_requests, k):
@@ -30,24 +34,34 @@ def send_request(payload):
         latency = round(end_time - start_time, 3)
         return response.json().get("result"), response.status_code, latency
     except Exception as e:
-        print(f"Unexpected error in send_request: {e}")
+        log(f"Unexpected error in send_request: {e}")
         return None, 0, None
     
-def print_results(users, num_requests, latencies, errors, duration):
+def print_save_results(users, num_requests, latencies, errors, duration):
     total_requests = users * num_requests
     if latencies:
         latencies_np = np.array(latencies)
-        print(f"\n--- Load Test Results @ {time.strftime('%X')} ---")
-        print(f"Total Requests: {total_requests}")
-        print(f"Total Errors: {errors} ({(errors / total_requests) * 100:.2f}%)")
-        print(f"Total Duration: {duration:.2f}s")
-        print(f"Throughput: {total_requests / duration:.2f} requests/sec")
-        print(f"Average Latency: {latencies_np.mean():.3f}s")
-        print(f"Median Latency: {np.median(latencies_np):.3f}s")
-        print(f"95th Percentile Latency: {np.percentile(latencies_np, 95):.3f}s")
-        print(f"Max Latency: {latencies_np.max():.3f}s")
+        log(f"\n--- Load Test Results @ {time.strftime('%X')} ---")
+        log(f"Total Requests: {total_requests}")
+        log(f"Total Errors: {errors} ({(errors / total_requests) * 100:.2f}%)")
+        log(f"Total Duration: {duration:.2f}s")
+        log(f"Throughput: {total_requests / duration:.2f} requests/sec")
+        log(f"Average Latency: {latencies_np.mean():.3f}s")
+        log(f"Median Latency: {np.median(latencies_np):.3f}s")
+        log(f"95th Percentile Latency: {np.percentile(latencies_np, 95):.3f}s")
+        log(f"Max Latency: {latencies_np.max():.3f}s")
+
+        log("Saving results...")
+        
+        file_name = f"results/load_test_results_use_batching={args.use_queue_batching}_batch_size={args.batch_size}_total_requests={num_requests * num_users}_k={args.top_k}_request_type={args.request_type}.txt"
+        with open(file_name, "a") as f:
+            f.write(f"Latencies: {latencies}\n")
+            f.write(f"Total Requests: {total_requests}\n")
+            f.write(f"Throughput: {total_requests / duration:.2f} requests/sec\n")
+            f.write(f"Average Latency: {latencies_np.mean():.3f}s\n")
+            f.write(f"95th Percentile Latency: {np.percentile(latencies_np, 95):.3f}s\n")
     else:
-        print("No successful responses.")
+        log("No successful responses.")
     
 def run_load_test_instant(users, num_requests, payloads):
     answers, latencies, errors = [], [], 0
@@ -65,7 +79,7 @@ def run_load_test_instant(users, num_requests, payloads):
                 answers.append(response)
 
     duration = time.time() - start_time
-    print_results(users, num_requests, latencies, errors, duration)
+    print_save_results(users, num_requests, latencies, errors, duration)
     return answers, latencies, errors
 
 def run_load_test_gradual(users, num_requests, payloads, total_time):
@@ -103,12 +117,12 @@ def run_load_test_gradual(users, num_requests, payloads, total_time):
                 answers.append(response)
 
     duration = time.time() - start_time
-    print_results(users, num_requests, latencies, errors, duration)
+    print_save_results(users, num_requests, latencies, errors, duration)
     return answers, latencies, errors
     
 def run_load_test(users, num_requests, payloads, request_type, total_time):
-    print(f"Starting load test with {users} users and {num_requests} requests each.")
-    print(f"Request Mode: {request_type}")
+    log(f"Starting load test with {users} users and {num_requests} requests each.")
+    log(f"Request Mode: {request_type}")
 
     if request_type == "instant":
         return run_load_test_instant(users, num_requests, payloads)
@@ -118,28 +132,28 @@ def run_load_test(users, num_requests, payloads, request_type, total_time):
         raise ValueError(f"Unknown request_type: {request_type}")
 
 if __name__ == "__main__":
-    print("Starting load tester...")
     args = get_args()
+    log("Starting load tester...")
     if args.use_queue_batching:
-        print("Using batching to process requests")
+        log("Using batching to process requests")
     if args.use_auto_scaler:
-        print("Using an auto-scaler to adjust the number of ports")
+        log("Using an auto-scaler to adjust the number of ports")
     if args.use_load_balancer:
-        print("Using a load balancer to distribute requests")
+        log("Using a load balancer to distribute requests")
     num_requests = args.num_requests
     num_users = args.num_users
     top_k = args.top_k
     request_type = args.request_type
     total_time = args.total_time
 
-    print("Loading test questions...")
+    log("Loading test questions...")
     question_loader = modules.question_loader.QuestionLoader()
     questions = question_loader.load_questions()
-    print(f"Loaded {len(questions)} questions.")
+    log(f"Loaded {len(questions)} questions.")
 
-    print("Generating payloads...")
+    log("Generating payloads...")
     payloads = get_payloads(num_requests * num_users, top_k)
-    print(f"Generated {len(payloads)} payloads.")
+    log(f"Generated {len(payloads)} payloads.")
 
-    run_load_test(num_users, num_requests, payloads, request_type, total_time)
-    print("Load test completed.")
+    answers, latencies, errors = run_load_test(num_users, num_requests, payloads, request_type, total_time)
+    log("Load test completed.")

@@ -19,8 +19,11 @@ import threading
 import sys
 from transformers import AutoModelForCausalLM
 
-
 args = get_args()
+
+def log(msg):
+    if args.verbose:
+        print(msg)
 
 DATA_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data', 'movies.csv'))
 EMBEDDING_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data', 'embeddings.npy'))
@@ -97,10 +100,10 @@ def get_embedding_batch(texts: list[str]) -> np.ndarray:
 
 # Precompute document embeddings
 if os.path.exists(EMBEDDING_PATH):
-    print("Existing embeddings found. Loading...")
+    log("Existing embeddings found. Loading...")
     doc_embeddings = np.load(EMBEDDING_PATH)
 else:
-    print("Embeddings not found. Computing...")
+    log("Embeddings not found. Computing...")
     doc_embeddings = []
     for doc in tqdm.tqdm(documents):
         doc_embeddings.append(get_embedding(doc))
@@ -123,7 +126,7 @@ def rag_pipeline(query: str, k: int) -> str:
     prompt = f"Question: {query}\n\nContext:\n{context}\n\nAnswer:\n"
 
     generated_text = chat_pipeline(prompt, max_new_tokens=50, do_sample=True)[0]["generated_text"]
-    print(f"[RAG] Total processing time: {time.time() - start:.2f}s")
+    log(f"[RAG] Total processing time: {time.time() - start:.2f}s")
     answer_start = generated_text.find("Answer:")
     if answer_start != -1:
         generated_text = generated_text[answer_start + len("Answer:"):].strip() + "..."
@@ -151,12 +154,12 @@ def rag_pipeline_batch(queries: list[str], k: int) -> list[str]:
     # Embedding
     embedding_start = time.time()
     query_embs = get_embedding_batch(queries)
-    print(f"[Batch Timing] Embedding took {time.time() - embedding_start:.2f}s")
+    log(f"[Batch Timing] Embedding took {time.time() - embedding_start:.2f}s")
 
     # Retrieval
     retrieval_start = time.time()
     retrieved_docs = [retrieve_top_k(query_emb, k) for query_emb in query_embs]
-    print(f"[Batch Timing] Retrieval took {time.time() - retrieval_start:.2f}s")
+    log(f"[Batch Timing] Retrieval took {time.time() - retrieval_start:.2f}s")
 
     # Prepare prompts
     prompt_prep = time.time()
@@ -165,13 +168,13 @@ def rag_pipeline_batch(queries: list[str], k: int) -> list[str]:
         f"Question: {query}\n\nContext:\n{context}\n\nAnswer:\n"
         for query, context in zip(queries, contexts)
     ]
-    print(f"[Batch Timing] Prompt prep took {time.time() - prompt_prep:.2f}s")
+    log(f"[Batch Timing] Prompt prep took {time.time() - prompt_prep:.2f}s")
 
     # Generate answers
     generation_start = time.time()
     try:
         raw_outputs = generate_batch(prompts, max_new_tokens=50)
-        print(f"[Batch Timing] Generation took {time.time() - generation_start:.2f}s")
+        log(f"[Batch Timing] Generation took {time.time() - generation_start:.2f}s")
     except Exception as e:
         sys.exit(1)
 
@@ -184,11 +187,11 @@ def rag_pipeline_batch(queries: list[str], k: int) -> list[str]:
         answers.append(text + "...")
 
 
-    print(f"[RAG] Total processing time for batch: {time.time() - start:.2f}s")
+    log(f"[RAG] Total processing time for batch: {time.time() - start:.2f}s")
     return answers
 
 def process_requests_batch():
-    print("[Batch] Background thread started.")
+    log("[Batch] Background thread started.")
     while True:
         batch = []
         start_time = time.time()
@@ -204,17 +207,17 @@ def process_requests_batch():
             ks = [req['payload'].k for req in batch]
             futures = [req['future'] for req in batch]
 
-            print(f"[Batch] Collected batch of size {len(batch)}")
+            log(f"[Batch] Collected batch of size {len(batch)}")
 
             results = rag_pipeline_batch(queries, ks[0])  
 
             for future, result in zip(futures, results):
                 future.set_result(result)
             
-            print("[Batch] Completed batch and returned results.")
+            log("[Batch] Completed batch and returned results.")
 
 if use_queue_batching:
-    print("[RAG] Starting background batching thread...")
+    log("[RAG] Starting background batching thread...")
     threading.Thread(target=process_requests_batch, daemon=True).start()
 
 @app.get("/ping")
@@ -226,14 +229,14 @@ async def predict(payload: QueryRequest):
     if use_queue_batching:
         future = Future()
         request_queue.put({"payload": payload, "future": future})
-        print(f"[RAG] Added request to queue: {payload.query}")
+        log(f"[RAG] Added request to queue: {payload.query}")
         result = await run_in_threadpool(future.result)
         return {"query": payload.query, "result": result}
     else:
-        print(f"[RAG] Processing request directly: {payload.query}")
+        log(f"[RAG] Processing request directly: {payload.query}")
         result = rag_pipeline(payload.query, payload.k)
         return {"query": payload.query, "result": result}
 
 if __name__ == "__main__":
-    print("[RAG] Starting RAG service...")
+    log("[RAG] Starting RAG service...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
