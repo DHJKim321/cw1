@@ -9,9 +9,10 @@ USE_QUEUE_BATCHING=True
 REQUEST_TYPE=gradual
 TOTAL_TIME=30
 VERBOSE=True
+IS_REMOTE=True
 
 echo "Arguments:"
-for var in BATCH_SIZE MAX_WAITING_TIME NUM_USERS NUM_REQUESTS TOP_K USE_QUEUE_BATCHING REQUEST_TYPE TOTAL_TIME VERBOSE; do
+for var in BATCH_SIZE MAX_WAITING_TIME NUM_USERS NUM_REQUESTS TOP_K USE_QUEUE_BATCHING REQUEST_TYPE TOTAL_TIME VERBOSE IS_REMOTE; do
   printf "  %s = %s\n" "$var" "${!var}"
 done
 
@@ -27,7 +28,8 @@ python serving_rag.py \
   --use_queue_batching $USE_QUEUE_BATCHING \
   --batch_size $BATCH_SIZE \
   --max_waiting_time $MAX_WAITING_TIME \
-  $( [ "$VERBOSE" = "True" ] && echo "--verbose" ) &
+  $( [ "$VERBOSE" = "True" ] && echo "--verbose" ) \
+  $( [ "$IS_REMOTE" = "True" ] && echo "--is_remote" ) &
 
 SERVER_PID=$!
 
