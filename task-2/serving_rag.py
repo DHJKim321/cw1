@@ -132,7 +132,6 @@ def rag_pipeline(query: str, k: int) -> str:
         generated_text = generated_text[answer_start + len("Answer:"):].strip() + "..."
     return generated_text
 
-# Helper function for rag_pipeline_batch
 def generate_batch(prompts: list[str], max_new_tokens: int = 50) -> list[str]:
     inputs = chat_tokenizer(prompts, return_tensors="pt", padding=True, truncation=True).to(device)
 
