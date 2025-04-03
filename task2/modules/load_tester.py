@@ -150,7 +150,7 @@ if __name__ == "__main__":
     total_time = args.total_time
 
     log("Loading test questions...")
-    question_loader = modules.question_loader.QuestionLoader()
+    question_loader = modules.question_loader.QuestionLoader(is_remote=args.is_remote)
     questions = question_loader.load_questions()
     log(f"Loaded {len(questions)} questions.")
 
