@@ -35,7 +35,7 @@ SERVER_PID=$!
 
 # === Wait for server to start ===
 echo "Waiting for server to start on port 8000..."
-while ! nc -z 192.168.47.132 8000; do
+while ! nc -z 129.215.18.52 8000; do
   sleep 0.5
 done
 
