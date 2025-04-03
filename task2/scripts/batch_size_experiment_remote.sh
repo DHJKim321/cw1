@@ -10,6 +10,14 @@ REQUEST_TYPE=gradual
 TOTAL_TIME=30
 VERBOSE=False
 OUTPUT_DIR="batch_test"
+IS_REMOTE=True
+
+# === Determine host based on remote/local ===
+if [ "$IS_REMOTE" = "True" ]; then
+  HOST=$(hostname -I | awk '{print $1}')
+else
+  HOST="127.0.0.1"
+fi
 
 # === Range of batch sizes to test ===
 BATCH_SIZES=(1 2 4 8 16 32)
@@ -32,14 +40,16 @@ for BATCH_SIZE in "${BATCH_SIZES[@]}"; do
     --use_queue_batching $USE_QUEUE_BATCHING \
     --batch_size $BATCH_SIZE \
     --max_waiting_time $MAX_WAITING_TIME \
-    $( [ "$VERBOSE" = "True" ] && echo "--verbose" ) &
+    $( [ "$VERBOSE" = "True" ] && echo "--verbose" ) \
+    $( [ "$IS_REMOTE" = "True" ] && echo "--is_remote" ) &
+
   SERVER_PID=$!
 
   # === Wait for server to be ready ===
-  echo "Waiting for server to start on port 8000..."
-  while ! nc -z 192.168.47.132 8000; do
-  sleep 0.5
-done
+  echo "Waiting for server to start on $HOST:8000..."
+  while ! nc -z $HOST 8000; do
+    sleep 0.5
+  done
 
   echo "Server is up!"
 
@@ -53,13 +63,12 @@ done
     --total_time $TOTAL_TIME \
     --output_dir $OUTPUT_DIR \
     --batch_size $BATCH_SIZE \
+    --host $HOST \
+    $( [ "$IS_REMOTE" = "True" ] && echo "--is_remote" ) \
     $( [ "$VERBOSE" = "True" ] && echo "--verbose" )
 
-  # === Cleanup server ===
-  cleanup
-
   echo "=== Finished test with BATCH_SIZE = $BATCH_SIZE ==="
+  echo ""
 done
 
-echo ""
-echo "Test Completed"
+echo "All tests completed!"
