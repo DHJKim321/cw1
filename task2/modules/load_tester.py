@@ -9,11 +9,13 @@ import modules.question_loader
 import random
 random.seed(42)
 
+args = get_args()
+
 def log(msg):
     if args.verbose:
         print(msg)
 
-URL = "http://127.0.0.1:8000/rag"
+URL = "http://192.168.47.132:8000" if args.is_remote else "http://localhost:8000"
 
 def get_payloads(total_requests, k):
     payloads = []
@@ -134,7 +136,6 @@ def run_load_test(users, num_requests, payloads, request_type, total_time):
         raise ValueError(f"Unknown request_type: {request_type}")
 
 if __name__ == "__main__":
-    args = get_args()
     log("Starting load tester...")
     if args.use_queue_batching:
         log("Using batching to process requests")
