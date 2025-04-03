@@ -299,7 +299,6 @@ def our_knn_nearest_batch(N, D, A, X, K, batch_size=100000, distance_metric="l2"
     top_k_indices = top_k_results[final_top_k]
     return top_k_indices 
 
-
 def our_knn(N, D, A, X, K, gpu= True ,distance_metric="l2", use_kernel = True, batch_size=100000):
     """_knn
 
