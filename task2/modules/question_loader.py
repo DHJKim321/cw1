@@ -1,4 +1,9 @@
 from datasets import load_dataset
+from modules.args_extractor import get_args
+args = get_args()
+import os
+if args.is_remote:
+    os.environ["HF_DATASETS_OFFLINE"] = "1"
 
 DATASET = "wiki_movies"
 NAME = "default"
