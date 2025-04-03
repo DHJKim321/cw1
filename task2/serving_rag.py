@@ -29,7 +29,7 @@ def log_queue_size():
     while True:
         with open("queue_size.log", "a") as f:
             f.write(f"[Monitor] Current queue size: {request_queue.qsize()}\n")
-            time.sleep(0.01)
+            time.sleep(0.5)
 
 DATA_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data', 'movies.csv'))
 EMBEDDING_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data', 'embeddings.npy'))
