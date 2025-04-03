@@ -20,7 +20,7 @@ else
 fi
 
 # === Range of batch sizes to test ===
-BATCH_SIZES=(1 2 4 8 16 32)
+BATCH_SIZES=(2 4 8 16 32)
 
 # === Loop through each batch size ===
 for BATCH_SIZE in "${BATCH_SIZES[@]}"; do
