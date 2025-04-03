@@ -26,7 +26,8 @@ class QuestionLoader:
             list: A list of questions loaded from the dataset.
         """
         if self.is_remote:
-            path = os.path.join(os.path.dirname(__file__), "data", "full_qa_test.txt")
+            base_dir = os.path.dirname(os.path.dirname(__file__))  # path to task2/
+            path = os.path.join(base_dir, "data", "full_qa_test.txt")
             questions = []
             with open(path, "r", encoding="utf-8") as file:
                 for line in file:
