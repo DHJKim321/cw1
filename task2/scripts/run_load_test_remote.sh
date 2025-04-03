@@ -57,4 +57,5 @@ python -m modules.load_tester \
   --total_time $TOTAL_TIME \
   --batch_size $BATCH_SIZE \
   --host $HOST \
+  $( [ "$IS_REMOTE" = "True" ] && echo "--is_remote" ) \
   $( [ "$VERBOSE" = "True" ] && echo "--verbose" )
