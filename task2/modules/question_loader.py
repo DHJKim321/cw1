@@ -16,16 +16,7 @@ class QuestionLoader:
         """
         self.dataset_name = DATASET
         self.name = NAME
-        if is_remote:
-            # Set the cache directory to a specific path for remote execution
-            self.cache_dir = os.path.expanduser("~") + "/.cache/huggingface/hub"
-            os.environ["HF_DATASETS_CACHE"] = self.cache_dir
-            os.environ["TRANSFORMERS_CACHE"] = self.cache_dir
-            os.environ["HF_METRICS_CACHE"] = self.cache_dir
-            os.environ["HF_HUB_CACHE"] = self.cache_dir
-            # Set the offline mode for datasets
-            # This is useful when running in an environment without internet access
-            os.environ["HF_DATASETS_OFFLINE"] = "1"
+        self.is_remote = is_remote
 
     def load_questions(self):
         """
@@ -34,6 +25,17 @@ class QuestionLoader:
         Returns:
             list: A list of questions loaded from the dataset.
         """
-        self.dataset = load_dataset(self.dataset_name, self.name, split="test", trust_remote_code=True)
-        questions = [item['question'] for item in self.dataset]
-        return questions
+        if self.is_remote:
+            path = os.path.join(os.path.dirname(__file__), "data", "full_qa_test.txt")
+            questions = []
+            with open(path, "r", encoding="utf-8") as file:
+                for line in file:
+                    if "\t" in line:
+                        question_part = line.strip().split("\t")[0]
+                        question = question_part.partition(" ")[2]
+                        questions.append(question)
+            return questions
+        else:
+            self.dataset = load_dataset(self.dataset_name, self.name, split="test", trust_remote_code=True)
+            questions = [item['question'] for item in self.dataset]
+            return questions
