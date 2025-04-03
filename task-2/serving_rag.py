@@ -25,6 +25,12 @@ def log(msg):
     if args.verbose:
         print(msg)
 
+def log_queue_size():
+    while True:
+        with open("queue_size.log", "a") as f:
+            f.write(f"[Monitor] Current queue size: {request_queue.qsize()}\n")
+            time.sleep(2)
+
 DATA_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data', 'movies.csv'))
 EMBEDDING_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data', 'embeddings.npy'))
 MAX_BATCH_SIZE = args.batch_size
