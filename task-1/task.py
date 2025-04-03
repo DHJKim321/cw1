@@ -1,3 +1,4 @@
+from tkinter import E
 import torch
 import cupy as cp
 # import triton
@@ -297,6 +298,35 @@ def our_knn_nearest_batch(N, D, A, X, K, batch_size=100000, distance_metric="l2"
     final_top_k = cp.argsort(top_k_distances)[:K]
     top_k_indices = top_k_results[final_top_k]
     return top_k_indices 
+
+def our_knn(N, D, A, X, K, gpu= True ,distance_metric="l2", use_kernel = True, batch_size=100000):
+    """_knn
+
+    Args:
+        N (int): Number of vectors
+        D (int): Dimension of vectors
+        A (list[list[float]]): A collection of vectors(N x D)
+        X (list[float]): A specified vector(ie. query vector)
+        K (int): topK nearest neighbors to find
+        distance_metric (str, optional): _description_. Defaults to "l2".
+        use_kernel (bool, optional): _description_. Defaults to True.
+
+    Returns:
+        _type_: _description_
+    """
+
+    if N >= batch_size:
+        top_k_indices = our_knn_nearest_batch(N,D,A,X,K,batch_size=batch_size, distance_metric=distance_metric, use_kernel= use_kernel)
+    
+    else:
+        if gpu:
+            top_k_indices = our_ann_cupy_basic(N,D,A,X,K, distance_metric = distance_metric, use_kernel = use_kernel)
+        else:
+            top_k_indices = our_knn_np(N,D,A,X,K, distance_metric=distance_metric)
+    
+    
+
+    return top_k_indices
 
 
 # ------------------------------------------------------------------------------------------------
