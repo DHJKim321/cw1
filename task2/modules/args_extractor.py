@@ -25,4 +25,5 @@ def get_args():
     parser.add_argument("--verbose", action="store_true", help="Enable verbose debug output")
     parser.add_argument("--output_dir", type=str, default="", help="Directory to save output files")
     parser.add_argument("--is_remote", action="store_true", help="If True, this is being run on a remote server")
+    parser.add_argument("--host", type=str, help="Host address for the server")
     return parser.parse_args()
