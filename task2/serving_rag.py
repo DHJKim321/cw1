@@ -226,6 +226,7 @@ def process_requests_batch():
 if use_queue_batching:
     log("[RAG] Starting background batching thread...")
     threading.Thread(target=process_requests_batch, daemon=True).start()
+    threading.Thread(target=log_queue_size, daemon=True).start()
 
 @app.get("/ping")
 def ping():
