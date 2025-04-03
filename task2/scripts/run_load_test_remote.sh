@@ -11,6 +11,12 @@ TOTAL_TIME=30
 VERBOSE=True
 IS_REMOTE=True
 
+if [ "$IS_REMOTE" = "True" ]; then
+  HOST=$(hostname -I | awk '{print $1}')
+else
+  HOST="127.0.0.1"
+fi
+
 echo "Arguments:"
 for var in BATCH_SIZE MAX_WAITING_TIME NUM_USERS NUM_REQUESTS TOP_K USE_QUEUE_BATCHING REQUEST_TYPE TOTAL_TIME VERBOSE IS_REMOTE; do
   printf "  %s = %s\n" "$var" "${!var}"
@@ -35,7 +41,7 @@ SERVER_PID=$!
 
 # === Wait for server to start ===
 echo "Waiting for server to start on port 8000..."
-while ! nc -z 129.215.18.52 8000; do
+while ! nc -z $HOST 8000; do
   sleep 0.5
 done
 
@@ -50,4 +56,5 @@ python -m modules.load_tester \
   --request_type $REQUEST_TYPE \
   --total_time $TOTAL_TIME \
   --batch_size $BATCH_SIZE \
+  --host $HOST \
   $( [ "$VERBOSE" = "True" ] && echo "--verbose" )

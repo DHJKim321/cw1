@@ -15,7 +15,7 @@ def log(msg):
     if args.verbose:
         print(msg)
 
-URL = "http://192.168.47.132:8000" if args.is_remote else "http://localhost:8000"
+URL = args.host + ":8000/rag"
 
 def get_payloads(total_requests, k):
     payloads = []
