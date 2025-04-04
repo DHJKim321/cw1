@@ -46,8 +46,8 @@ for BATCH_SIZE in "${BATCH_SIZES[@]}"; do
   SERVER_PID=$!
 
   # === Wait for server to be ready ===
-  echo "Waiting for server to start on $HOST:8000..."
-  while ! nc -z $HOST 8000; do
+  echo "Waiting for server to start on $HOST:8001..."
+  while ! nc -z $HOST 8001; do
     sleep 0.5
   done
 

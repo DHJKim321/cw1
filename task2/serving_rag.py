@@ -247,4 +247,4 @@ async def predict(payload: QueryRequest):
 
 if __name__ == "__main__":
     log("[RAG] Starting RAG service...")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
