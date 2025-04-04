@@ -22,18 +22,25 @@ fi
 # === Range of batch sizes to test ===
 BATCH_SIZES=(2 4 8 16 32)
 
+# === Cleanup function ===
+cleanup() {
+  if ps -p $SERVER_PID > /dev/null; then
+    echo "[Cleanup] Killing server with PID $SERVER_PID"
+    kill -9 $SERVER_PID 2>/dev/null
+    wait $SERVER_PID 2>/dev/null
+  fi
+  echo ""
+}
+trap cleanup EXIT
+
+# === Kill any previous server that might be running on port 7999 ===
+echo "Pre-cleaning: Killing any existing servers on port 7999"
+pkill -f serving_rag.py
+
 # === Loop through each batch size ===
 for BATCH_SIZE in "${BATCH_SIZES[@]}"; do
   echo ""
   echo "=== Running test with BATCH_SIZE = $BATCH_SIZE ==="
-
-  # === Cleanup function on exit or interruption ===
-  cleanup() {
-    echo "[Cleanup] Killing server with PID $SERVER_PID"
-    kill -9 $SERVER_PID 2>/dev/null
-    echo ""
-  }
-  trap cleanup SIGINT SIGTERM EXIT
 
   # === Start server ===
   python serving_rag.py \
@@ -69,6 +76,9 @@ for BATCH_SIZE in "${BATCH_SIZES[@]}"; do
 
   echo "=== Finished test with BATCH_SIZE = $BATCH_SIZE ==="
   echo ""
+
+  # === Kill server before next iteration ===
+  cleanup
 done
 
 echo "All tests completed!"
