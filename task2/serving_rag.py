@@ -119,27 +119,27 @@ else:
     doc_embeddings = np.vstack(doc_embeddings)
     np.save(EMBEDDING_PATH, doc_embeddings)
 
-### You may want to use your own top-k retrieval method (task 1)
-# def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
-#     """Retrieve top-k docs via dot-product similarity."""
-#     sims = doc_embeddings @ query_emb.T
-#     top_k_indices = np.argsort(sims.ravel())[::-1][:k]
-#     return [documents[i] for i in top_k_indices]
-
+## You may want to use your own top-k retrieval method (task 1)
 def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
-    N, D = doc_embeddings.shape
-    indices = our_knn_nearest_batch(
-        N=N,
-        D=D,
-        A=doc_embeddings,
-        X=query_emb.squeeze(),
-        K=k,
-        batch_size=5000,
-        distance_metric="l2",
-        use_kernel=True
-    )
+    """Retrieve top-k docs via dot-product similarity."""
+    sims = doc_embeddings @ query_emb.T
+    top_k_indices = np.argsort(sims.ravel())[::-1][:k]
+    return [documents[i] for i in top_k_indices]
 
-    return [documents[i] for i in indices]
+# def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
+#     N, D = doc_embeddings.shape
+#     indices = our_knn_nearest_batch(
+#         N=N,
+#         D=D,
+#         A=doc_embeddings,
+#         X=query_emb.squeeze(),
+#         K=k,
+#         batch_size=5000,
+#         distance_metric="l2",
+#         use_kernel=True
+#     )
+
+#     return [documents[i] for i in indices]
 
 
 def rag_pipeline(query: str, k: int) -> str:
