@@ -18,6 +18,7 @@ from fastapi.concurrency import run_in_threadpool
 import threading
 import sys
 from transformers import AutoModelForCausalLM
+from task1.task import our_knn_nearest_batch
 
 args = get_args()
 
@@ -119,11 +120,27 @@ else:
     np.save(EMBEDDING_PATH, doc_embeddings)
 
 ### You may want to use your own top-k retrieval method (task 1)
+# def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
+#     """Retrieve top-k docs via dot-product similarity."""
+#     sims = doc_embeddings @ query_emb.T
+#     top_k_indices = np.argsort(sims.ravel())[::-1][:k]
+#     return [documents[i] for i in top_k_indices]
+
 def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
-    """Retrieve top-k docs via dot-product similarity."""
-    sims = doc_embeddings @ query_emb.T
-    top_k_indices = np.argsort(sims.ravel())[::-1][:k]
-    return [documents[i] for i in top_k_indices]
+    N, D = doc_embeddings.shape
+    indices = our_knn_nearest_batch(
+        N=N,
+        D=D,
+        A=doc_embeddings,
+        X=query_emb.squeeze(),
+        K=k,
+        batch_size=5000,
+        distance_metric="l2",
+        use_kernel=True
+    )
+
+    return [documents[i] for i in indices]
+
 
 def rag_pipeline(query: str, k: int) -> str:
     start = time.time()

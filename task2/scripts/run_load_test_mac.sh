@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export PYTHONPATH=$(dirname "$(pwd)")
+
 BATCH_SIZE=8
 MAX_WAITING_TIME=2
 NUM_USERS=10
