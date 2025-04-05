@@ -1,3 +1,8 @@
+"""
+This module is responsible for extracting command line arguments for the RAG-based QA service.
+It uses argparse to define and parse the arguments, providing default values and help descriptions for each argument.
+"""
+
 import argparse
 
 def str2bool(value):
