@@ -1,55 +1,69 @@
-# Task 2
+# Task 2: Retrieval-Augmented Generation (RAG) Service with Batching and Load Testing
 
-A FastAPI-based Retrieval-Augmented Generation (RAG) service that combines document retrieval with text generation.
+## Motivation
 
-## Step 1:
+Retrieval-Augmented Generation (RAG) pipelines are powerful, but inference latency and throughput can become bottlenecks under load. This project builds a FastAPI-based RAG service with configurable batching, load balancing, and auto-scaling features — enabling empirical analysis of performance under different configurations.
 
-1. Create a conda environment with the requirements.txt file
+## Key Features
 
-TIP: Check [this example](https://github.com/ServerlessLLM/ServerlessLLM/blob/main/docs/stable/getting_started/slurm_setup.md) for how to use slurm to create a conda environment.
+- RAG Pipeline that retrieves top-k movie plots and generates answers using a small LLM.
+- Optional queue-based batching of incoming requests to improve efficiency.
+- Load testing script supporting both "instant" and "gradual" user request strategies.
+- Auto-scaler and load balancer modules prepared for multi-instance extensions.
 
-```bash
-conda create -n rag python=3.10 -y
-conda activate rag
-```
+## How to Run
 
-```bash
-git clone https://github.com/ed-aisys/edin-mls-25-spring.git
-cd edin-mls-25-spring/task-2
-pip install -r requirements.txt
-```
+1. Install dependencies:
 
-2. Run the service
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-```bash
-python serving_rag.py
-```
+2. Start the RAG service:
 
-3. Test the service
+    ```bash
+    python serving_rag.py --use_queue_batching True --batch_size 8 --max_waiting_time 2 --is_remote
+    ```
 
-```bash
-curl -X POST "http://localhost:8000/rag" -H "Content-Type: application/json" -d '{"query": "Which animals can hover in the air?"}'
-```
+3. (On a separate Terminal) Run a load test:
 
-## Step 2:
+    ```bash
+    python -m modules.load_tester --use_queue_batching True --batch_size 8 --num_users 50 --num_requests 50 --request_type gradual --host 127.0.0.1
+    ```
 
-1. Create a new script (bash or python) to test the service with different request rates. A reference implementation is [TraceStorm](https://github.com/ServerlessLLM/TraceStorm)
+Alternatively, use the shell scripts in `scripts/` for common scenarios (`run_load_test_remote.sh`, etc.).
 
-## Step 3:
+## Experiment Setup
 
-1. Implement a request queue to handle concurrent requests
+To evaluate batching effectiveness, use the `batch_size_experiment_*.sh` scripts based on compute location (local or remote). These:
 
-A potential design:
-Create a request queue
-Put incoming requests into the queue, instead of directly processing them
-Start a background thread that listens on the request queue
+- Launch a fresh server instance per batch size
+- Wait for readiness
+- Perform load testing with specified user traffic
+- Log latency, error rates, and throughput
+- Cleanup between runs
 
-2. Implement a batch processing mechanism
+## Analysis Strategy
 
-Take up to MAX_BATCH_SIZE requests from the queue or wait until MAX_WAITING_TIME
-Process the batched requests
+We calculate the following evaluation metrics alongside others that we do not mention in our report (denoted by (X)):
 
+- Average latency
+- 95th percentile latency
+- Throughput
+- Total Requests (X)
+- Total Errors (X)
+- Total Duration (X)
+- Median Latency (X)
+- Max Latency (X)
 
-3. Measure the performance of each step compared to the original service
+Full evaluation outputs are written to the `/results` directory.
 
-4. Draw a conclusion
+## System Components
+
+- `serving_rag.py`: FastAPI app, request queue, batching logic, embedding + generation
+- `modules/load_tester.py`: Load testing engine with instant/gradual modes
+- `modules/args_extractor.py`: Centralized CLI arg handling
+- `modules/question_loader.py`: Retrieves evaluation questions
+- `scripts/`: Automate tests and run modes
+- `data/`: Dataset files and precomputed embeddings
+- `results/`: .txt result files that contain evaluation metrics and latencies of requests.

@@ -1,6 +1,14 @@
-torch>=2.0.0
-numpy>=1.24.0
-transformers>=4.30.0
+python_version >=3.10,<3.11
 fastapi>=0.100.0
 uvicorn>=0.22.0
 pydantic>=2.0.0 
+transformers>=4.30.0
+torch>=2.0.0
+datasets==2.19.1
+tqdm==4.66.2
+pandas==2.2.1
+numpy>=1.24.0
+regex==2023.12.25
+requests==2.31.0
+cupy-cuda11x
+httpx==0.27.0
