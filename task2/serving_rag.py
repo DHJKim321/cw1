@@ -1,3 +1,20 @@
+"""
+This script serves as a FastAPI application that implements a Retrieval-Augmented Generation (RAG) model.
+It uses a pre-trained embedding model to retrieve relevant documents from a dataset and then generates answers using a chat model. The script supports both local and remote execution, as well as batch processing of requests.
+It is designed to be run as a standalone application and can be accessed via HTTP requests.
+
+Additional improvements include:
+- Request batching for improved performance.
+- Background processing of requests to avoid blocking the main thread.
+- Logging of request processing times and queue sizes.
+- Support for both local and remote execution of models.
+- Caching of embeddings to avoid recomputation.
+
+The context documents are taken from the Wikipedia Movie Plots dataset
+    https://www.kaggle.com/datasets/jrobischon/wikipedia-movie-plots
+"""
+
+
 import torch
 import warnings
 warnings.filterwarnings("ignore")
