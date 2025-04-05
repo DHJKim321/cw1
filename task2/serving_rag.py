@@ -12,6 +12,8 @@ Additional improvements include:
 
 The context documents are taken from the Wikipedia Movie Plots dataset
     https://www.kaggle.com/datasets/jrobischon/wikipedia-movie-plots
+The CSV file can be found in data/movies.csv
+We do not list an example as each sample is too long
 """
 
 
@@ -84,6 +86,7 @@ def load_context(data_path):
     df = pd.read_csv(data_path)
     documents = "Title: " + df["Title"] + " Plot: " + df["Plot"]
     documents = documents.apply(clean_text).tolist()
+    # Final document format would be "Title: <title> Plot: <plot>"
     return documents
 
 documents = load_context(DATA_PATH)

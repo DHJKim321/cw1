@@ -5,6 +5,9 @@ It can handle both local and remote datasets. The class provides a method to loa
 
 These questions are taken from the WikiMovies QA dataset
     https://huggingface.co/datasets/facebook/wiki_movies
+An example of the dataset is:
+    'what films can be described by stripping?	The Wrestler, The Full Monty, Spun, Strange Brew'
+The full dataset can be found in data/full_qa_test.txt
 """
 
 from datasets import load_dataset
