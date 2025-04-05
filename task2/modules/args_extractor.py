@@ -1,3 +1,7 @@
+"""
+This module contains the argument parser for the RAG-based QA service.
+"""
+
 import argparse
 
 def str2bool(value):
