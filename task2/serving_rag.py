@@ -22,6 +22,7 @@ from task1.task import our_knn_nearest_batch
 
 args = get_args()
 
+# Logging functions
 def log(msg):
     if args.verbose:
         print(msg)
@@ -32,6 +33,7 @@ def log_queue_size():
             f.write(f"[Monitor] Current queue size: {request_queue.qsize()}\n")
             time.sleep(0.5)
 
+# Constants
 DATA_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data', 'movies.csv'))
 EMBEDDING_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data', 'embeddings.npy'))
 MAX_BATCH_SIZE = args.batch_size
@@ -44,6 +46,7 @@ class QueryRequest(BaseModel):
     query: str
     k: int = 2
 
+# Device Selection
 if torch.backends.mps.is_available():
     device = torch.device("mps")
 elif torch.cuda.is_available():
@@ -51,15 +54,16 @@ elif torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
-# Initialize FastAPI
+# Initialize FastAPI and queue
 app = FastAPI()
 request_queue = queue.Queue()
 
-# Load data
+# Load context documents
 def clean_text(text):
     return re.sub(r'\[\d+\]', '', text)
 
 def load_context(data_path):
+    # Load the CSV file into a DataFrame
     df = pd.read_csv(data_path)
     documents = "Title: " + df["Title"] + " Plot: " + df["Plot"]
     documents = documents.apply(clean_text).tolist()
@@ -94,7 +98,13 @@ else:
 
 @torch.no_grad()
 def get_embedding(text: str) -> np.ndarray:
-    """Compute a simple average-pool embedding."""
+    """
+    Compute a simple average-pool embedding.
+    Input:
+        text: single prompt
+    Output:
+        numpy array of shape (1, embedding_dim)
+    """
     inputs = embed_tokenizer(text, return_tensors="pt", truncation=True).to(device)
     with torch.no_grad():
         outputs = embed_model(**inputs)
@@ -102,6 +112,13 @@ def get_embedding(text: str) -> np.ndarray:
 
 @torch.no_grad()
 def get_embedding_batch(texts: list[str]) -> np.ndarray:
+    """
+    Compute a simple average-pool embedding for a batch.
+    Input:
+        texts: list of prompts
+    Output:
+        numpy array of shape (batch_size, embedding_dim)
+    """
     inputs = embed_tokenizer(texts, return_tensors="pt", truncation=True, padding=True).to(device)
     with torch.no_grad():
         outputs = embed_model(**inputs)
@@ -119,14 +136,28 @@ else:
     doc_embeddings = np.vstack(doc_embeddings)
     np.save(EMBEDDING_PATH, doc_embeddings)
 
-## You may want to use your own top-k retrieval method (task 1)
+# We use this due to storage space errors when installing CuPy on the cluster
 def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
-    """Retrieve top-k docs via dot-product similarity."""
+    """
+    Retrieve top-k docs via dot-product similarity.
+    Input:
+        query_emb: query embedding of shape (1, D)
+        k: number of top documents to retrieve
+    Output:
+        list of top-k documents
+    """
     sims = doc_embeddings @ query_emb.T
     top_k_indices = np.argsort(sims.ravel())[::-1][:k]
     return [documents[i] for i in top_k_indices]
 
 # def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
+#     """
+#     Retrieve top-k docs via our knn search.
+#     Input:
+#         query_emb: query embedding of shape (1, D)
+#         k: number of top documents to retrieve
+#     Output:
+#         list of top-k documents
 #     N, D = doc_embeddings.shape
 #     indices = our_knn_nearest_batch(
 #         N=N,
@@ -141,23 +172,47 @@ def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
 
 #     return [documents[i] for i in indices]
 
-
 def rag_pipeline(query: str, k: int) -> str:
+    """
+    This function is used to generate text using the chat model
+    It does not use batching and performs text generation for a single prompt
+    Input:
+        query: single prompt
+        k: number of top documents to retrieve
+    Output:
+        generated answer to a single prompt
+    """
     start = time.time()
+    # Embedding
     query_emb = get_embedding(query)
+    
+    # Retrieval
     retrieved_docs = retrieve_top_k(query_emb, k)
 
+    # Prepare prompt
     context = "\n".join(retrieved_docs)
     prompt = f"Question: {query}\n\nContext:\n{context}\n\nAnswer:\n"
 
+    # Generate answer
     generated_text = chat_pipeline(prompt, max_new_tokens=50, do_sample=True)[0]["generated_text"]
     log(f"[RAG] Total processing time: {time.time() - start:.2f}s")
+    
+    # Extract answers
     answer_start = generated_text.find("Answer:")
     if answer_start != -1:
         generated_text = generated_text[answer_start + len("Answer:"):].strip() + "..."
     return generated_text
 
 def generate_batch(prompts: list[str], max_new_tokens: int = 50) -> list[str]:
+    """
+    Generate answers for a batch of prompts using the chat model.
+    This is a helper function.
+    Input:
+        prompts: list of prompts
+        max_new_tokens: maximum number of tokens to generate
+    Output:
+        list of generated answers for each prompt
+    """
     inputs = chat_tokenizer(prompts, return_tensors="pt", padding=True, truncation=True).to(device)
 
     with torch.inference_mode():
@@ -171,8 +226,16 @@ def generate_batch(prompts: list[str], max_new_tokens: int = 50) -> list[str]:
     decoded = chat_tokenizer.batch_decode(outputs, skip_special_tokens=True)
     return decoded
 
-
 def rag_pipeline_batch(queries: list[str], k: int) -> list[str]:
+    """
+    This function is used to generate text using the chat model in batches.
+    It performs text generation for multiple prompts at once.
+    Input:
+        queries: list of prompts
+        k: number of top documents to retrieve
+    Output:
+        list of generated answers for each prompt
+    """
     start = time.time()
 
     # Embedding
@@ -215,18 +278,24 @@ def rag_pipeline_batch(queries: list[str], k: int) -> list[str]:
     return answers
 
 def process_requests_batch():
+    """
+    Background thread to process requests in batches.
+    It collects requests until the batch size is reached or the waiting time exceeds the maximum.
+    It then processes the batch and returns the results.
+    """
     log("[Batch] Background thread started.")
     while True:
         batch = []
         start_time = time.time()
 
+        # Collect requests until the batch size is reached or the waiting time exceeds the maximum
         while len(batch) < MAX_BATCH_SIZE and (time.time() - start_time) < MAX_WAITING_TIME:
             try:
                 batch.append(request_queue.get(timeout=MAX_WAITING_TIME))
             except queue.Empty:
                 break
 
-        if batch:
+        if batch: # If we have a batch to process
             queries = [req['payload'].query for req in batch]
             ks = [req['payload'].k for req in batch]
             futures = [req['future'] for req in batch]
@@ -240,6 +309,7 @@ def process_requests_batch():
             
             log("[Batch] Completed batch and returned results.")
 
+# Initialize the background thread for batching
 if use_queue_batching:
     log("[RAG] Starting background batching thread...")
     threading.Thread(target=process_requests_batch, daemon=True).start()

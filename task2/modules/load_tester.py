@@ -11,6 +11,7 @@ random.seed(42)
 
 args = get_args()
 
+# Logging function
 def log(msg):
     if args.verbose:
         print(msg)
@@ -18,6 +19,17 @@ def log(msg):
 URL = f"http://{args.host}:7999/rag"
 
 def get_payloads(total_requests, k):
+    """
+    Generate payloads for the load test.
+    Each payload contains a random question and the number of top results to return.
+    The dataset comes from the question_loader module.
+
+    Input:
+        total_requests: Total number of requests to generate.
+        k: Number of top results to return.
+    Output:
+        payloads: List of payloads for the load test.
+    """
     payloads = []
     for i in range(total_requests):
         question = random.choice(questions)
@@ -29,6 +41,17 @@ def get_payloads(total_requests, k):
     return payloads
 
 def send_request(payload):
+    """
+    Send a request to the server with the given payload.
+    Measure the latency of the request and return the response.
+
+    Input:
+        payload: The payload to send in the request.
+    Output:
+        response: The response from the server.
+        status_code: The status code of the response (e.g. 200 OK, 404 NOT FOUND, 500 INTERNAL SERVER ERROR).
+        latency: The latency of the request in seconds.
+    """
     start_time = time.time()
     try:
         response = requests.post(URL, json=payload)
@@ -40,6 +63,16 @@ def send_request(payload):
         return None, 0, None
     
 def print_save_results(users, num_requests, latencies, errors, duration):
+    """
+    Print and save the results of the load test.
+
+    Input:
+        users: Number of users in the load test.
+        num_requests: Number of requests per user.
+        latencies: List of latencies for each request.
+        errors: Number of errors encountered during the load test.
+        duration: Total duration of the load test in seconds.
+    """
     total_requests = users * num_requests
     if latencies:
         latencies_np = np.array(latencies)
@@ -68,6 +101,20 @@ def print_save_results(users, num_requests, latencies, errors, duration):
         log("No successful responses.")
     
 def run_load_test_instant(users, num_requests, payloads):
+    """
+    Run the load test with all users sending requests at the same time.
+    The total number of requests is users * num_requests.
+    Each user sends num_requests requests in parallel.
+
+    Input:
+        users: Number of users in the load test.
+        num_requests: Number of requests per user.
+        payloads: List of payloads for the load test.
+    Output:
+        answers: List of answers from the server.
+        latencies: List of latencies for each request.
+        errors: Number of errors encountered during the load test.
+    """
     answers, latencies, errors = [], [], 0
     start_time = time.time()
 
@@ -87,6 +134,20 @@ def run_load_test_instant(users, num_requests, payloads):
     return answers, latencies, errors
 
 def run_load_test_gradual(users, num_requests, payloads, total_time):
+    """
+    Run the load test with users sending requests gradually over a specified total time.
+    Each user sends num_requests requests in parallel, with a delay between each request.
+
+    Input:
+        users: Number of users in the load test.
+        num_requests: Number of requests per user.
+        payloads: List of payloads for the load test.
+        total_time: Total time to run the load test in seconds.
+    Output:
+        answers: List of answers from the server.
+        latencies: List of latencies for each request.
+        errors: Number of errors encountered during the load test.
+    """
     answers, latencies, errors = [], [], 0
     start_time = time.time()
     interval = total_time / (users * num_requests)
@@ -104,6 +165,8 @@ def run_load_test_gradual(users, num_requests, payloads, total_time):
     all_futures = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=None) as executor:
+        # Create a thread pool for user tasks
+        # Each user will send num_requests requests in parallel
         with concurrent.futures.ThreadPoolExecutor(max_workers=users) as user_executor:
             tasks = []
             for i in range(users):
@@ -112,6 +175,7 @@ def run_load_test_gradual(users, num_requests, payloads, total_time):
             for task in concurrent.futures.as_completed(tasks):
                 all_futures.extend(task.result())
 
+        # Wait for all futures to complete
         for future in concurrent.futures.as_completed(all_futures):
             response, status, latency = future.result()
             if status != 200 or latency is None:
@@ -125,6 +189,23 @@ def run_load_test_gradual(users, num_requests, payloads, total_time):
     return answers, latencies, errors
     
 def run_load_test(users, num_requests, payloads, request_type, total_time):
+    """
+    Run the load test based on the specified request type.
+    The request type can be "instant" or "gradual".
+
+    Input:
+        users: Number of users in the load test.
+        num_requests: Number of requests per user.
+        payloads: List of payloads for the load test.
+        request_type: Type of request to send ("instant" or "gradual").
+        total_time: Total time to run the load test in seconds (only used for "gradual").
+    Output:
+        answers: List of answers from the server.
+        latencies: List of latencies for each request.
+        errors: Number of errors encountered during the load test.
+    Error:
+        ValueError: If the request type is unknown.
+    """
     log(f"Starting load test with {users} users and {num_requests} requests each.")
     log(f"Request Mode: {request_type}")
 
