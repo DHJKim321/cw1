@@ -4,9 +4,7 @@ This script sends a specified number of requests to the server and measures the 
 It can run in two modes: instant and gradual.
 Instant mode sends all requests at once, while gradual mode sends requests over a specified time period.
 
-The script also generates payloads for the requests based on a set of questions.
-These questions are taken from the WikiMovies QA dataset
-    https://huggingface.co/datasets/facebook/wiki_movies
+The script also generates payloads for the requests based on a set of questions using the QuestionLoader class.
 """
 
 

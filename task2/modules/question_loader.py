@@ -1,3 +1,12 @@
+"""
+QuestionLoader class for loading questions from a dataset.
+This class is designed to load questions from a specified dataset and split.
+It can handle both local and remote datasets. The class provides a method to load questions from the dataset.
+
+These questions are taken from the WikiMovies QA dataset
+    https://huggingface.co/datasets/facebook/wiki_movies
+"""
+
 from datasets import load_dataset
 from modules.args_extractor import get_args
 import os
