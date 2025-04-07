@@ -26,7 +26,7 @@ def log(msg):
     if args.verbose:
         print(msg)
 
-URL = f"http://{args.host}:7999/rag"
+URL = f"http://{args.host}:{args.port}/rag"
 
 def get_payloads(total_requests, k):
     """

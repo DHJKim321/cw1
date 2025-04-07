@@ -7,11 +7,11 @@ import time
 import json
 import scipy
 from scipy.cluster.vq import vq
-from test import testdata_kmeans, testdata_knn, testdata_ann
-from time_log_decorater import time_log
+# from test import testdata_kmeans, testdata_knn, testdata_ann
+# from time_log_decorater import time_log
 from scipy.spatial.distance import cdist
 # For Test
-from sklearn.cluster import KMeans
+# from sklearn.cluster import KMeans
 
 # You can create any kernel here
 subtract_square = cp.ElementwiseKernel('float32 x, float32 y', 
@@ -299,7 +299,7 @@ def our_knn_nearest_batch(N, D, A, X, K, batch_size=100000, distance_metric="l2"
     top_k_indices = top_k_results[final_top_k]
     return top_k_indices 
 
-def our_knn(N, D, A, X, K, gpu= True ,distance_metric="l2", use_kernel = True, batch_size=100000):
+def our_knn(N, D, A, X, K, gpu= True ,distance_metric="dot", use_kernel = True, batch_size=100000):
     """_knn
 
     Args:
@@ -320,7 +320,7 @@ def our_knn(N, D, A, X, K, gpu= True ,distance_metric="l2", use_kernel = True, b
     
     else:
         if gpu:
-            top_k_indices = our_ann_cupy_basic(N,D,A,X,K, distance_metric = distance_metric, use_kernel = use_kernel)
+            top_k_indices = our_knn_cupy_basic(N,D,A,X,K, distance_metric = distance_metric, use_kernel = use_kernel)
         else:
             top_k_indices = our_knn_np(N,D,A,X,K, distance_metric=distance_metric)
     
@@ -794,7 +794,7 @@ def ivfpq_index_numpy(N, D, A, num_clusters=100, M=8):
     codebooks, encoded_data = product_quantization_numpy(D, M, A)
     
     return ivf_lists, cluster_centers, codebooks, encoded_data
-@time_log
+# @time_log
 def search_ivfpq_numpy(X, ivf_lists, cluster_centers, codebooks, encoded_data, A, K=50, num_probe=10, M=8, D=64, candidate_factor=2):
     """
     Performs an IVFPQ ANN search with batched PQ distance computation + final re-ranking.
@@ -913,7 +913,7 @@ def ivfpq_index_cupy(N, D, A, num_clusters=100, M=8):
     
     return ivf_lists, cluster_centers, codebooks, encoded_data
 
-@time_log
+# @time_log
 def search_ivfpq_cupy(X, ivf_lists, cluster_centers, codebooks, encoded_data, A, K=50, num_probe=10, M=8, D=64, candidate_factor=2):
     """
     Performs an IVFPQ ANN search.
@@ -1039,7 +1039,7 @@ def ivfpq_index_raw_kernerls(N, D, A, num_clusters=100, M=8):
     
     return ivf_lists, cluster_centers, codebooks, encoded_data
 
-@time_log
+# @time_log
 def search_ivfpq_raw_kernels(X, ivf_lists, cluster_centers, codebooks, encoded_data, A, K=50, num_probe=10, M=8, D=64, candidate_factor=2):
     """
     Performs an IVFPQ ANN search.
@@ -1127,21 +1127,19 @@ def our_ann_raw_kernerls(N, D, A, X, K):
 
 # ------------------------------------------------------------------------------------------------
 # Wrapping for test
-@time_log
-def our_knn(N, D, A, X, K):
-    global KNN_IMPLEMENTATIONS
-    
-    if KNN_IMPLEMENTATIONS == "raw_kernerls":
+# @time_log
+def our_knn(N, D, A, X, K, implementation):
+    if implementation == "raw_kernels":
         # top_k_indices = our_knn_nearest_batch(N, D, A, X, K, batch_size=100000, distance_metric="l2", use_kernel=True)
         top_k_indices = our_knn_cupy_basic(N, D, A, X, K, distance_metric="l2", use_kernel = True)
-    elif KNN_IMPLEMENTATIONS == "cupy_basic":    
+    elif implementation == "cupy_basic":    
         top_k_indices = our_knn_cupy_basic(N, D, A, X, K, distance_metric="l2", use_kernel = False)
-    elif KNN_IMPLEMENTATIONS == "numpy":
+    elif implementation == "numpy":
         top_k_indices = our_knn_np(N, D, A, X, K, distance_metric="l2")
 
     return top_k_indices
 
-@time_log
+# @time_log
 def our_kmeans(N, D, A, K):
     global KMEANS_IMPLEMENTATIONS
     
@@ -1156,7 +1154,7 @@ def our_kmeans(N, D, A, K):
     return labels
 
 
-@time_log
+# @time_log
 def our_ann(N, D, A, X, K):
     global ANN_IMPLEMENTATIONS
 
@@ -1280,226 +1278,226 @@ def test_manhattan_gpu_vs_cpu(D=2, use_kernel=False):
     # print(f"Manhattan (CPU - GPU): {(end_cpu-start_cpu)  - (end_gpu-start_gpu)}")
     return end_gpu-start_gpu, end_cpu-start_cpu
 
-# Example
-def test_kmeans():
-    N, D, A, K = testdata_kmeans("")
-    start = time.time()
-    kmeans_result = our_kmeans_numpy(N, D, A, K)
-    end = time.time()
-    print("numpy:", end - start)
-    # print(kmeans_result)
+# # Example
+# def test_kmeans():
+#     N, D, A, K = testdata_kmeans("")
+#     start = time.time()
+#     kmeans_result = our_kmeans_numpy(N, D, A, K)
+#     end = time.time()
+#     print("numpy:", end - start)
+#     # print(kmeans_result)
     
-    start = time.time()
-    kmeans_result = our_kmeans_cupy_basic(N, D, A, K)
-    end = time.time()
-    print("cupy basic:", end - start)
-    # print(kmeans_result)
+#     start = time.time()
+#     kmeans_result = our_kmeans_cupy_basic(N, D, A, K)
+#     end = time.time()
+#     print("cupy basic:", end - start)
+#     # print(kmeans_result)
     
-    start = time.time()
-    kmeans_result = our_kmeans_raw_kernels(N, D, A, K)
-    end = time.time()
-    print("cupy raw kernels:", end - start)
-    # print(kmeans_result)
-    
-
-def test_knn_numpy():
-    N, D, A, X, K = testdata_knn("")
-
-    A = np.asarray(A)
-    X = np.asarray(X)
-    
-    # Run the our_ann function
-    top_k_indices_np = our_knn_np(N, D, A, X, K)
-    
-    top_k_indices_np = cp.asnumpy(top_k_indices_np)
-    
-    # Check the length of the result
-    assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
-    
-    # Check if the indices are within the valid range
-    assert np.all(top_k_indices_np < N), "Some indices are out of range"
-    
-    print("top_k_indices_np.shape:", top_k_indices_np.shape)
-    print("top_k_indices_np:", top_k_indices_np)
-    
-    print("Test passed!")
-
-    return top_k_indices_np
+#     start = time.time()
+#     kmeans_result = our_kmeans_raw_kernels(N, D, A, K)
+#     end = time.time()
+#     print("cupy raw kernels:", end - start)
+#     # print(kmeans_result)
     
 
+# def test_knn_numpy():
+#     N, D, A, X, K = testdata_knn("")
+
+#     A = np.asarray(A)
+#     X = np.asarray(X)
     
-def test_our_ann():
-    # Generate test data
-    N, D, A, X, K = testdata_ann("")
+#     # Run the our_ann function
+#     top_k_indices_np = our_knn_np(N, D, A, X, K)
     
-    # Convert data to CuPy arrays
-    A_cp = np.asarray(A)
-    X_cp = np.asarray(X)
+#     top_k_indices_np = cp.asnumpy(top_k_indices_np)
     
-    # Run the our_ann function
-    top_k_indices_np = our_ann(N, D, A_cp, X_cp, K)
+#     # Check the length of the result
+#     assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
     
-    # Convert the result back to NumPy for assertion
-    top_k_indices_np = cp.asnumpy(top_k_indices_np)
+#     # Check if the indices are within the valid range
+#     assert np.all(top_k_indices_np < N), "Some indices are out of range"
     
-    # Check the length of the result
-    assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
+#     print("top_k_indices_np.shape:", top_k_indices_np.shape)
+#     print("top_k_indices_np:", top_k_indices_np)
     
-    # Check if the indices are within the valid range
-    assert np.all(top_k_indices_np < N), "Some indices are out of range"
-    
-    print("top_k_indices_np.shape:", top_k_indices_np.shape)
-    print("top_k_indices_np:", top_k_indices_np)
-    
-    print("Test passed!")
+#     print("Test passed!")
+
+#     return top_k_indices_np
     
 
-
-def test_our_ann_IVFPQ_numpy():
-    # Generate test data
-    N, D, A, X, K, = testdata_ann("")
     
-    A = np.asarray(A)
-    X = np.asarray(X)
+# def test_our_ann():
+#     # Generate test data
+#     N, D, A, X, K = testdata_ann("")
     
+#     # Convert data to CuPy arrays
+#     A_cp = np.asarray(A)
+#     X_cp = np.asarray(X)
     
-    # Run the our_ann_IVFPQ function
-    top_k_indices_np = our_ann(N, D, A, X, K)
-
-    top_k_indices_np = cp.asnumpy(top_k_indices_np)
+#     # Run the our_ann function
+#     top_k_indices_np = our_ann(N, D, A_cp, X_cp, K)
     
-    # Check the length of the result
-    assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
+#     # Convert the result back to NumPy for assertion
+#     top_k_indices_np = cp.asnumpy(top_k_indices_np)
     
-    # Check if the indices are within the valid range
-    assert np.all(top_k_indices_np < N), "Some indices are out of range"
+#     # Check the length of the result
+#     assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
     
-    print("top_k_indices_np.shape:", top_k_indices_np.shape)
-    print("top_k_indices_np:", top_k_indices_np)
+#     # Check if the indices are within the valid range
+#     assert np.all(top_k_indices_np < N), "Some indices are out of range"
     
-    print("Test passed!")
-    return top_k_indices_np
+#     print("top_k_indices_np.shape:", top_k_indices_np.shape)
+#     print("top_k_indices_np:", top_k_indices_np)
     
-def test_our_ann_IVFPQ_cupy_basic():
-    # Generate test data
-    N, D, A, X, K, M, n_probe = testdata_ann("")
-    
-    # Convert data to CuPy arrays
-    A_cp = cp.asarray(A)
-    X_cp = cp.asarray(X)
-    
-    # Run the our_ann_IVFPQ function
-    top_k_indices = our_ann(N, D, A_cp, X_cp, K)
-    
-    # Convert the result back to NumPy for assertion
-    top_k_indices_np = cp.asnumpy(top_k_indices)
-    print("top_k_indices_np:", top_k_indices_np)
-    # Check the length of the result
-    assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
-    
-    # Check if the indices are within the valid range
-    assert np.all(top_k_indices_np < N), "Some indices are out of range"
-    
-    print("top_k_indices_np.shape:", top_k_indices_np.shape)
-    print("top_k_indices_np:", top_k_indices_np)
-    
-    print("Test passed!")
-    return top_k_indices_np
-
-def test_recall_rate_numpy():
-    # Generate test data
-    N, D, A, X, K = testdata_ann("")
-    
-    A_cp = np.asarray(A)
-    X_cp = np.asarray(X)
-    
-    # Ensure inputs are normalized
-    A = A / np.linalg.norm(A, axis=1, keepdims=True)  # Normalize database
-    X = X / np.linalg.norm(X)  # Normalize query
-    
-    # Run the KNN algorithm
-    knn_result_np = our_knn(N, D, A_cp, X_cp, K)
-    
-    
-    # Run the ANN algorithm
-    ann_result_np = our_ann(N, D, A_cp, X_cp, K)
-
-
-    
-    # Calculate recall rate
-    recall = recall_rate(knn_result_np, ann_result_np, K)
-
-    
-    print(f"Recall rate: {recall:.2f}")
-    
-def test_recall_rate_cupy_basic():
-    # Generate test data
-    N, D, A, X, K = testdata_ann("")
-    
-    # Convert data to CuPy arrays
-    A = cp.asarray(A, dtype=cp.float32)
-    X = cp.asarray(X, dtype=cp.float32)
-    
-    # Ensure inputs are normalized
-    A = A / cp.linalg.norm(A, axis=1, keepdims=True)  # Normalize database
-    X = X / cp.linalg.norm(X)  # Normalize query
-    
-    
-    # Run the KNN algorithm
-    knn_result = our_knn(N, D, A, X, K)
-    knn_result_np = knn_result.get()
-    
-
-    # Run the ANN algorithm
-    ann_result = our_ann(N, D, A, X, K)
-    ann_result_np = ann_result
-    
-    # Calculate recall rate
-    recall = recall_rate(knn_result_np, ann_result_np, K)
-
-    
-    print(f"Recall rate: {recall:.2f}")
-    
-def test_recall_rate_raw_kernerls():
-    # Generate test data
-    N, D, A, X, K = testdata_ann("")
-    
-    # Convert data to CuPy arrays
-    A = cp.asarray(A, dtype=cp.float32)
-    X = cp.asarray(X, dtype=cp.float32)
-    
-    # Ensure inputs are normalized
-    A = A / cp.linalg.norm(A, axis=1, keepdims=True)  # Normalize database
-    X = X / cp.linalg.norm(X)  # Normalize query
-    
-    # Run the KNN algorithm
-    knn_result = our_knn(N, D, A, X, K)
-    knn_result_np = knn_result.get()
-    
-
-    # Run the ANN algorithm
-    ann_result = our_ann(N, D, A, X, K)
-    ann_result_np = ann_result
+#     print("Test passed!")
     
 
 
-    # Calculate recall rate
-    recall = recall_rate(knn_result_np, ann_result_np, K)
+# def test_our_ann_IVFPQ_numpy():
+#     # Generate test data
+#     N, D, A, X, K, = testdata_ann("")
+    
+#     A = np.asarray(A)
+#     X = np.asarray(X)
+    
+    
+#     # Run the our_ann_IVFPQ function
+#     top_k_indices_np = our_ann(N, D, A, X, K)
+
+#     top_k_indices_np = cp.asnumpy(top_k_indices_np)
+    
+#     # Check the length of the result
+#     assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
+    
+#     # Check if the indices are within the valid range
+#     assert np.all(top_k_indices_np < N), "Some indices are out of range"
+    
+#     print("top_k_indices_np.shape:", top_k_indices_np.shape)
+#     print("top_k_indices_np:", top_k_indices_np)
+    
+#     print("Test passed!")
+#     return top_k_indices_np
+    
+# def test_our_ann_IVFPQ_cupy_basic():
+#     # Generate test data
+#     N, D, A, X, K, M, n_probe = testdata_ann("")
+    
+#     # Convert data to CuPy arrays
+#     A_cp = cp.asarray(A)
+#     X_cp = cp.asarray(X)
+    
+#     # Run the our_ann_IVFPQ function
+#     top_k_indices = our_ann(N, D, A_cp, X_cp, K)
+    
+#     # Convert the result back to NumPy for assertion
+#     top_k_indices_np = cp.asnumpy(top_k_indices)
+#     print("top_k_indices_np:", top_k_indices_np)
+#     # Check the length of the result
+#     assert len(top_k_indices_np) == K, f"Expected {K} indices, but got {len(top_k_indices_np)}"
+    
+#     # Check if the indices are within the valid range
+#     assert np.all(top_k_indices_np < N), "Some indices are out of range"
+    
+#     print("top_k_indices_np.shape:", top_k_indices_np.shape)
+#     print("top_k_indices_np:", top_k_indices_np)
+    
+#     print("Test passed!")
+#     return top_k_indices_np
+
+# def test_recall_rate_numpy():
+#     # Generate test data
+#     N, D, A, X, K = testdata_ann("")
+    
+#     A_cp = np.asarray(A)
+#     X_cp = np.asarray(X)
+    
+#     # Ensure inputs are normalized
+#     A = A / np.linalg.norm(A, axis=1, keepdims=True)  # Normalize database
+#     X = X / np.linalg.norm(X)  # Normalize query
+    
+#     # Run the KNN algorithm
+#     knn_result_np = our_knn(N, D, A_cp, X_cp, K)
+    
+    
+#     # Run the ANN algorithm
+#     ann_result_np = our_ann(N, D, A_cp, X_cp, K)
+
 
     
-    print(f"Recall rate: {recall:.2f}")
+#     # Calculate recall rate
+#     recall = recall_rate(knn_result_np, ann_result_np, K)
+
+    
+#     print(f"Recall rate: {recall:.2f}")
+    
+# def test_recall_rate_cupy_basic():
+#     # Generate test data
+#     N, D, A, X, K = testdata_ann("")
+    
+#     # Convert data to CuPy arrays
+#     A = cp.asarray(A, dtype=cp.float32)
+#     X = cp.asarray(X, dtype=cp.float32)
+    
+#     # Ensure inputs are normalized
+#     A = A / cp.linalg.norm(A, axis=1, keepdims=True)  # Normalize database
+#     X = X / cp.linalg.norm(X)  # Normalize query
     
     
-def recall_rate(knn_result, ann_result, K):
-    """
-    Calculate the recall rate of two lists
-    knn_result[K]: The top K nearest vectors ID from KNN
-    ann_result[K]: The top K nearest vectors ID from ANN
+#     # Run the KNN algorithm
+#     knn_result = our_knn(N, D, A, X, K)
+#     knn_result_np = knn_result.get()
     
-    Returns:
-    float: Recall rate
-    """
-    return len(set(knn_result) & set(ann_result)) / K
+
+#     # Run the ANN algorithm
+#     ann_result = our_ann(N, D, A, X, K)
+#     ann_result_np = ann_result
+    
+#     # Calculate recall rate
+#     recall = recall_rate(knn_result_np, ann_result_np, K)
+
+    
+#     print(f"Recall rate: {recall:.2f}")
+    
+# def test_recall_rate_raw_kernerls():
+#     # Generate test data
+#     N, D, A, X, K = testdata_ann("")
+    
+#     # Convert data to CuPy arrays
+#     A = cp.asarray(A, dtype=cp.float32)
+#     X = cp.asarray(X, dtype=cp.float32)
+    
+#     # Ensure inputs are normalized
+#     A = A / cp.linalg.norm(A, axis=1, keepdims=True)  # Normalize database
+#     X = X / cp.linalg.norm(X)  # Normalize query
+    
+#     # Run the KNN algorithm
+#     knn_result = our_knn(N, D, A, X, K)
+#     knn_result_np = knn_result.get()
+    
+
+#     # Run the ANN algorithm
+#     ann_result = our_ann(N, D, A, X, K)
+#     ann_result_np = ann_result
+    
+
+
+#     # Calculate recall rate
+#     recall = recall_rate(knn_result_np, ann_result_np, K)
+
+    
+#     print(f"Recall rate: {recall:.2f}")
+    
+    
+# def recall_rate(knn_result, ann_result, K):
+#     """
+#     Calculate the recall rate of two lists
+#     knn_result[K]: The top K nearest vectors ID from KNN
+#     ann_result[K]: The top K nearest vectors ID from ANN
+    
+#     Returns:
+#     float: Recall rate
+#     """
+#     return len(set(knn_result) & set(ann_result)) / K
 
 
 if __name__ == "__main__":
@@ -1518,7 +1516,7 @@ if __name__ == "__main__":
     for _ in range(10):
         KNN_IMPLEMENTATIONS = "raw_kernerls"
         ANN_IMPLEMENTATIONS = "raw_kernerls"
-        test_recall_rate_raw_kernerls()
+        # test_recall_rate_raw_kernerls()
         
     # test_recall_rate_sim_cupy()
     # test_knn_numpy()

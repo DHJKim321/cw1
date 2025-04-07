@@ -31,4 +31,6 @@ def get_args():
     parser.add_argument("--output_dir", type=str, default="", help="Directory to save output files")
     parser.add_argument("--is_remote", action="store_true", help="If True, this is being run on a remote server")
     parser.add_argument("--host", type=str, help="Host address for the server")
+    parser.add_argument("--port", type=int, help="Port number for the server")
+    parser.add_argument("--knn_algorithm", type=str, help="Algorithm to use for top-k retrieval")
     return parser.parse_args()

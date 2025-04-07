@@ -36,10 +36,13 @@ from modules.args_extractor import get_args
 from fastapi.concurrency import run_in_threadpool
 import threading
 import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from transformers import AutoModelForCausalLM
-from task1.task import our_knn_nearest_batch
-
 args = get_args()
+
+global KNN_IMPLEMENTATIONS
+KNN_IMPLEMENTATIONS = args.knn_algorithm
+from task1.task import our_knn
 
 # Logging functions
 def log(msg):
@@ -155,6 +158,7 @@ else:
         doc_embeddings.append(get_embedding(doc))
     doc_embeddings = np.vstack(doc_embeddings)
     np.save(EMBEDDING_PATH, doc_embeddings)
+# doc_embeddings = torch.from_numpy(doc_embeddings).to(device)
 
 # We use this due to storage space errors when installing CuPy on the cluster
 def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
@@ -178,20 +182,22 @@ def retrieve_top_k(query_emb: np.ndarray, k: int = 2) -> list:
 #         k: number of top documents to retrieve
 #     Output:
 #         list of top-k documents
+#     """
+#     query_emb = torch.from_numpy(query_emb).to(device)
 #     N, D = doc_embeddings.shape
-#     indices = our_knn_nearest_batch(
+#     indices = our_knn(
 #         N=N,
 #         D=D,
 #         A=doc_embeddings,
 #         X=query_emb.squeeze(),
 #         K=k,
-#         batch_size=5000,
-#         distance_metric="l2",
-#         use_kernel=True
+#         implementation=KNN_IMPLEMENTATIONS,
 #     )
-
-#     return [documents[i] for i in indices]
-
+#     # Free GPU memory
+#     del query_emb
+#     torch.cuda.empty_cache()
+#     return [documents[int(i)] for i in indices.tolist()]
+        
 def rag_pipeline(query: str, k: int) -> str:
     """
     This function is used to generate text using the chat model
@@ -354,4 +360,5 @@ async def predict(payload: QueryRequest):
 
 if __name__ == "__main__":
     log("[RAG] Starting RAG service...")
-    uvicorn.run(app, host="0.0.0.0", port=7999)
+    port = args.port
+    uvicorn.run(app, host="0.0.0.0", port=port)

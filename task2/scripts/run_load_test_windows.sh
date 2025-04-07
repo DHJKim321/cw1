@@ -1,17 +1,26 @@
 #!/bin/bash
 
-BATCH_SIZE=8
+PORT=7999
+BATCH_SIZE=16
 MAX_WAITING_TIME=2
 NUM_USERS=10
-NUM_REQUESTS=10
+NUM_REQUESTS=100
 TOP_K=2
 USE_QUEUE_BATCHING=True
 REQUEST_TYPE=gradual
 TOTAL_TIME=30
-VERBOSE=False
+VERBOSE=True
+IS_REMOTE=False
+KNN_ALGORITHM=raw_kernels
+
+if [ "$IS_REMOTE" = "True" ]; then
+  HOST=$(hostname -I | awk '{print $1}')
+else
+  HOST="127.0.0.1"
+fi
 
 echo "Arguments:"
-for var in BATCH_SIZE MAX_WAITING_TIME NUM_USERS NUM_REQUESTS TOP_K USE_QUEUE_BATCHING REQUEST_TYPE TOTAL_TIME VERBOSE; do
+for var in PORT BATCH_SIZE MAX_WAITING_TIME NUM_USERS NUM_REQUESTS TOP_K USE_QUEUE_BATCHING REQUEST_TYPE TOTAL_TIME VERBOSE IS_REMOTE KNN_ALGORITHM; do
   printf "  %s = %s\n" "$var" "${!var}"
 done
 
@@ -27,15 +36,18 @@ python serving_rag.py \
   --use_queue_batching $USE_QUEUE_BATCHING \
   --batch_size $BATCH_SIZE \
   --max_waiting_time $MAX_WAITING_TIME \
+  --port $PORT \
+  --knn_algorithm $KNN_ALGORITHM \
+  $( [ "$IS_REMOTE" = "True" ] && echo "--is_remote" ) \
   $( [ "$VERBOSE" = "True" ] && echo "--verbose" ) &
 
 SERVER_PID=$!
 
-echo "Waiting for server to start on port 8000..."
+echo "Waiting for server to start on port 7999..."
 MAX_TRIES=40
 TRIES=0
 
-until curl -s http://localhost:8000/ping > /dev/null; do
+until curl -s http://localhost:7999/ping > /dev/null; do
   sleep 0.5
   TRIES=$((TRIES + 1))
   if [ $TRIES -ge $MAX_TRIES ]; then
@@ -55,4 +67,7 @@ python -m modules.load_tester \
   --request_type $REQUEST_TYPE \
   --total_time $TOTAL_TIME \
   --batch_size $BATCH_SIZE \
+  --host $HOST \
+  --port $PORT \
+  $( [ "$IS_REMOTE" = "True" ] && echo "--is_remote" ) \
   $( [ "$VERBOSE" = "True" ] && echo "--verbose" )
