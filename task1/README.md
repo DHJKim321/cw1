@@ -46,7 +46,6 @@ Identify the K nearest vectors within a set of vectors.
 -  Result[K]: The top K nearest vectors ID (index of the vector in A)
 
 
-
 ## Part 2: KMeans and ANN
 
 ### Part 2.1: KMeans
@@ -72,8 +71,10 @@ Efficient **Approximate Nearest Neighbor (ANN)** search using **Inverted File In
 IVFPQ (Approximate Nearest Neighbor Search)
 
 
-## How to Run
-from ivfpq_numpy import our_ann_numpy
+### How to Run
+
+### Overview ###
+top_k_indices = our_ann(N, D, A, X, K)
 
 **Input:**
 -  N: Number of vectors
@@ -85,32 +86,32 @@ from ivfpq_numpy import our_ann_numpy
 **Output:**
 -  Result[K]: The top K nearest vectors ID (index of the vector in A)
 
-# Overview #
-top_k_indices = our_ann(N, D, A, X, K)
 
-# Pipeline Summary #
+
+### Pipeline Summary ###
+```python
 1. Product Quantization (PQ)
 def product_quantization_numpy(D, M, A):
-    # Split vectors A ∈ ℝ^(N×D) into M sub-vectors of size D/M
-    # Apply K-Means on each subspace (K=256)
-    # Return: M codebooks and encoded labels per vector
+     Split vectors A ∈ ℝ^(N×D) into M sub-vectors of size D/M 
+     Apply K-Means on each subspace (K=256) 
+     Return: M codebooks and encoded labels per vector 
 
 2. IVF + PQ Index Construction
 def ivfpq_index(N, D, A, num_clusters=100, M=8):
-    # Run K-Means clustering on A → Assign to coarse clusters
-    # Build inverted index: ivf_lists = {cluster_id: [data_indices]}
-    # Apply PQ to compress A
-    # Return: ivf_lists, cluster_centers, codebooks, encoded_data
+     Run K-Means clustering on A → Assign to coarse clusters
+     Build inverted index: ivf_lists = {cluster_id: [data_indices]}
+     Apply PQ to compress A
+     Return: ivf_lists, cluster_centers, codebooks, encoded_data
 
 3. IVFPQ Search
 def search_ivfpq(X, ivf_lists, cluster_centers, codebooks, encoded_data, A, K):
-    # 1. Find nearest coarse clusters to query X (IVF)
-    # 2. Gather candidates from inverted lists
-    # 3. Compute approximate PQ distance (batch decoding)
-    # 4. Re-rank top candidates using exact L2 distance
-    # Return: Top-K ANN indices
+     1. Find nearest coarse clusters to query X (IVF)
+     2. Gather candidates from inverted lists
+     3. Compute approximate PQ distance (batch decoding)
+     4. Re-rank top candidates using exact L2 distance
+     Return: Top-K ANN indices
 
-# Notes # 
+### Notes ### 
 Custom K-Means: our_kmeans_batch(...)
 PQ splits high-dim vectors into subspaces for compression
 Inverted index limits search scope
