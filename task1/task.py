@@ -320,7 +320,7 @@ def our_knn(N, D, A, X, K, gpu= True ,distance_metric="l2", use_kernel = True, b
     
     else:
         if gpu:
-            top_k_indices = our_ann_cupy_basic(N,D,A,X,K, distance_metric = distance_metric, use_kernel = use_kernel)
+            top_k_indices = our_knn_cupy_basic(N,D,A,X,K, distance_metric = distance_metric, use_kernel = use_kernel)
         else:
             top_k_indices = our_knn_np(N,D,A,X,K, distance_metric=distance_metric)
     
