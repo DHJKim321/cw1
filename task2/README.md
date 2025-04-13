@@ -33,6 +33,19 @@ Retrieval-Augmented Generation (RAG) pipelines are powerful, but inference laten
 
 Alternatively, use the shell scripts in `scripts/` for common scenarios (`run_load_test_remote.sh`, etc.).
 
+4. Example of starting the Rag service with load balancer and autoscaler:
+
+```bash
+python advanced_optimisations.py \
+  --data_path "/path/to/movies.csv" \
+  --embedding_path "/path/to/embeddings.npy" \
+  --local_model_path "/path/to/embedding/model" \
+  --local_chat_model_path "/path/to/chat/model" \
+  --worker_port_start 8000 \
+  --load_balancer_port 8001
+ ```
+
+
 ## Experiment Setup
 
 To evaluate batching effectiveness, use the `batch_size_experiment_*.sh` scripts based on compute location (local or remote). These:
@@ -61,6 +74,7 @@ Full evaluation outputs are written to the `/results` directory.
 ## System Components
 
 - `serving_rag.py`: FastAPI app, request queue, batching logic, embedding + generation
+- `advanced_optimisations.py`: Load balancer and Auto scaler optimisations
 - `modules/load_tester.py`: Load testing engine with instant/gradual modes
 - `modules/args_extractor.py`: Centralized CLI arg handling
 - `modules/question_loader.py`: Retrieves evaluation questions
